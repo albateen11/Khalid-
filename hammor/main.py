@@ -51,9 +51,9 @@ def build(fetch=data.fetch_all) -> tuple[str, str, bytes]:
     market = analysis.market_summary(df)
     summary = sharia_summary(results)
 
-    log.info("Running research team")
-    out, notes, ai_used = advisors.run_team(df, market, summary, date_str)
-    html = report.render(date_str, out, notes, df, market, failed, ai_used)
+    log.info("Holding the morning team meeting")
+    out, transcript, ai_used = advisors.run_team(df, market, summary, date_str)
+    html = report.render(date_str, out, transcript, df, market, failed, ai_used)
     subject = f"Hammor Co. Daily Report – {now:%a %d %b %Y} – {out['headline']}"[:180]
     return subject, html, df.to_csv(index=False).encode()
 

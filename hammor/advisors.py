@@ -1,10 +1,14 @@
-"""The Hammor Co. research team, run on Claude.
+"""The Hammor Co. morning meeting, run on Claude.
 
-  * ADX Equity Analyst   – reviews Abu Dhabi candidates and searches the latest news
-  * DFM Equity Analyst   – does the same for Dubai
-  * Investment Committee – the Chief Investment Advisor and the Sharia Compliance
-                           Officer turn the desk notes and quant scores into
-                           final recommendations (structured JSON)
+Each team member (see team.py) is a separate Claude call with their own persona.
+They speak in turn and each one hears everything said before them:
+
+  Round 1 – Pitches     Omar (ADX) and Layla (DFM) research the news and pitch ideas
+  Round 2 – Challenge   Yousef (risk), Mariam (dividends) and Abdullah (Sharia)
+                        question the pitches and respond to one another
+  Round 3 – Rebuttal    Omar and Layla defend, adjust or drop their ideas
+  Decision              Saeed (Chief) weighs the discussion and issues the final
+                        recommendations as structured JSON
 
 If ANTHROPIC_API_KEY is not set, or the API fails, a rules-based committee is
 used, so the daily email still goes out.
@@ -18,11 +22,17 @@ import os
 
 import pandas as pd
 
+from .team import ABDULLAH, LAYLA, MARIAM, OMAR, SAEED, YOUSEF, Member
+
 log = logging.getLogger(__name__)
 
 MODEL = os.environ.get("HAMMOR_MODEL", "claude-opus-5-5")
 BETAS = ["server-side-fallback-2026-07-01"]
-WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 6}
+
+
+def web_search(max_uses: int) -> dict:
+    return {"type": "web_search_20260209", "name": "web_search", "max_uses": max_uses}
+
 
 FIRM_CONTEXT = """You work at Hammor Co., an investment research firm focused only on
 Sharia-compliant equities listed on the Abu Dhabi Securities Exchange (ADX) and the
@@ -30,56 +40,16 @@ Dubai Financial Market (DFM). The client is a private investor who wants ideas o
 three horizons: long-term (1+ years, quality and value), medium-term growth
 (3–12 months, momentum and earnings), and income (dividends).
 Prices are in AED. Sharia screening follows AAOIFI Shari'ah Standard No. 21.
-Recommend ONLY stocks whose sharia_status is "Compliant". Be specific, concise and
-honest about uncertainty: the quantitative data comes from free, delayed sources
-and may have gaps."""
+Only stocks whose sharia_status is "Compliant" may be recommended. The quantitative
+data comes from free, delayed sources and may have gaps: be honest about uncertainty
+and never invent figures."""
 
-ANALYST_PROMPT = """You are the {exchange} Equity Analyst at Hammor Co.
-Today is {date}. Below is the quantitative screen for today's best-scoring
-Sharia-compliant {exchange} candidates, plus a market snapshot.
+MEETING_STYLE = """You are speaking at the team's morning meeting. Talk naturally in the
+first person, as in a real meeting: address colleagues by name, agree or disagree with
+specific points they made, and refer to stock names and numbers. Plain text only: no
+headings, no bullet lists, no markdown. Stay strictly in character."""
 
-Use web search to check the latest news (the last 1–2 weeks) that matters for these
-names and for the {exchange} market: earnings, dividends, guidance, contracts, index
-inclusions, regulatory changes, oil prices, and rates.
-
-Write a desk note for the Investment Committee of at most 450 words:
-1. Market tone (2–3 sentences)
-2. For each candidate you would back: one line of thesis plus the news that supports it
-3. Candidates you would NOT back now, and why
-4. Upcoming catalysts or events this week
-
-Use plain text with short headings. Don't invent figures; if you couldn't verify
-something, say so.
-
-DATA:
-{data}"""
-
-COMMITTEE_PROMPT = """You are the Hammor Co. Investment Committee: the Chief Investment
-Advisor and the Sharia Compliance Officer. Today is {date}.
-
-You have the quantitative screen of Sharia-compliant stocks, today's market snapshot,
-the Sharia screening summary, and the desk notes from the ADX and DFM analysts.
-
-Produce today's recommendations for the client:
-- picks.long_term: 3–4 stocks (1+ year horizon, quality and value)
-- picks.medium_term: 3–4 stocks (3–12 months, growth and momentum)
-- picks.income: 3–4 stocks (dividend income)
-Prefer a mix of ADX and DFM stocks, and avoid concentrating in one sector.
-A stock may appear on more than one list only if it is clearly the best fit.
-For each pick give an entry_zone as a price range in AED, based on the current price,
-the 50/200-day averages and the 52-week range. target_price is your 12-month view
-for long-term and income picks, and your horizon view for medium-term picks.
-action is one of Buy / Accumulate / Hold / Watch.
-watchlist: compliant stocks that are close to a buy signal.
-avoid: stocks the client should stay away from right now (compliant or not), with a reason.
-sharia_officer_note: 3–5 sentences on today's compliance picture, including borderline
-names, stocks that need scholar review, and dividend purification guidance.
-risks: 3–5 key market risks.
-Use ONLY symbols that appear in the data, and choose picks only from stocks with
-sharia_status "Compliant".
-
-QUANT SCREEN (Compliant stocks):
-{screen}
+DATA_BLOCK = """TODAY: {date}
 
 MARKET SNAPSHOT:
 {market}
@@ -87,11 +57,56 @@ MARKET SNAPSHOT:
 SHARIA SCREENING SUMMARY:
 {sharia}
 
-ADX DESK NOTE:
-{adx_note}
+CANDIDATES (Sharia-compliant, highest quant scores; ratios are fractions, so 0.12 = 12%):
+{screen}"""
 
-DFM DESK NOTE:
-{dfm_note}"""
+PITCH = """It's {date}, and you open the meeting for {exchange}. First use web search to
+check the latest news (the last 1–2 weeks) on your best {exchange} candidates and on the
+{exchange} market: results, dividends, contracts, index changes, regulation, oil and rates.
+Then pitch to the team in at most 230 words: the market tone, your 2–4 best ideas (say which
+horizon each one suits and why, citing the news and the numbers), and one stock from the
+list you would NOT buy now."""
+
+CHALLENGE = {
+    "risk": """Respond to the pitches so far in at most 200 words. Challenge the
+riskiest ideas: valuation, stretched RSI, volatility, liquidity, concentration, macro.
+You may web search for current macro risks. Say which ideas you are comfortable with and
+what would make the others acceptable.""",
+    "income": """Respond in at most 180 words. Review the income angle: which pitched
+or listed stocks have the most sustainable dividends, any yield traps, and upcoming
+ex-dividend dates (you may web search for recent dividend announcements). Respond to
+Yousef's points where relevant, and suggest your top income names.""",
+    "sharia": """Respond in at most 170 words. Review every stock mentioned so far
+for Sharia compliance using the data: flag borderline ratios, names that need scholar
+review, and the dividend purification percentage the client should give to charity.
+Object clearly if a colleague mentioned a non-compliant or doubtful stock.""",
+}
+
+REBUTTAL = """Your colleagues have challenged the ideas. Respond in at most 130 words:
+defend the ideas you still believe in with evidence, accept fair criticism, and say
+clearly which ideas you drop or adjust (for example a lower entry price or a smaller size)."""
+
+DECISION = """You have heard the whole morning meeting (transcript below). As Chief Investment
+Advisor, make the final decision for the client.
+
+- picks.long_term: 3–4 stocks (1+ year horizon, quality and value)
+- picks.medium_term: 3–4 stocks (3–12 months, growth and momentum)
+- picks.income: 3–4 stocks (dividend income)
+Prefer a mix of ADX and DFM, and avoid concentrating in one sector. Respect valid
+objections from Yousef and Abdullah: never pick a stock Abdullah objected to on Sharia grounds.
+For each pick give an entry_zone as an AED price range (use the current price, the 50/200-day
+averages and the 52-week range), a target_price, an action (Buy / Accumulate / Hold / Watch),
+and team_view: one sentence on who backed the idea and who raised concerns.
+watchlist: compliant stocks that are close to a buy signal. avoid: stocks to stay away from now.
+sharia_officer_note: Abdullah's compliance conclusions in 3–5 sentences, including purification.
+risks: 3–5 key risks, building on Yousef's points.
+closing_remarks: what you say to close the meeting, in at most 120 words, in your own voice,
+explaining the main decisions and whose argument won where the team disagreed.
+headline: one line summarising today's view. market_overview: 3–5 sentences.
+Use ONLY symbols from the data, and pick only stocks whose sharia_status is "Compliant".
+
+MEETING TRANSCRIPT:
+{transcript}"""
 
 _PICK = {
     "type": "object",
@@ -105,9 +120,10 @@ _PICK = {
         "target_price": {"type": "number"},
         "rationale": {"type": "string"},
         "key_risk": {"type": "string"},
+        "team_view": {"type": "string"},
     },
-    "required": ["symbol", "name", "exchange", "action", "conviction",
-                 "entry_zone", "target_price", "rationale", "key_risk"],
+    "required": ["symbol", "name", "exchange", "action", "conviction", "entry_zone",
+                 "target_price", "rationale", "key_risk", "team_view"],
     "additionalProperties": False,
 }
 _REASON = {
@@ -135,9 +151,10 @@ COMMITTEE_SCHEMA = {
         "avoid": {"type": "array", "items": _REASON},
         "sharia_officer_note": {"type": "string"},
         "risks": {"type": "array", "items": {"type": "string"}},
+        "closing_remarks": {"type": "string"},
     },
     "required": ["headline", "market_overview", "picks", "watchlist", "avoid",
-                 "sharia_officer_note", "risks"],
+                 "sharia_officer_note", "risks", "closing_remarks"],
     "additionalProperties": False,
 }
 
@@ -176,10 +193,11 @@ def _text(resp) -> str:
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
-def _call(messages, *, tools=None, output_config=None, max_tokens=32000):
+def _call(system: str, user: str, *, tools=None, output_config=None, max_tokens=32000):
     client = _client()
+    messages = [{"role": "user", "content": user}]
     kwargs = dict(model=MODEL, max_tokens=max_tokens, betas=BETAS, fallbacks="default",
-                  system=FIRM_CONTEXT, messages=messages)
+                  system=system, messages=messages)
     if tools:
         kwargs["tools"] = tools
     if output_config:
@@ -199,45 +217,80 @@ def _call(messages, *, tools=None, output_config=None, max_tokens=32000):
     return resp
 
 
-def analyst_note(exchange: str, df: pd.DataFrame, market: dict, date: str) -> str:
-    cands = _candidates(df, exchange)
-    if cands.empty:
-        return f"No Sharia-compliant {exchange} candidates with data today."
-    data = json.dumps({"market": market.get(exchange, {}), "candidates": json.loads(_records(cands))},
-                      default=str)
-    prompt = ANALYST_PROMPT.format(exchange=exchange, date=date, data=data)
-    resp = _call([{"role": "user", "content": prompt}], tools=[WEB_SEARCH],
-                 output_config={"effort": "medium"})
-    return _text(resp)
+def _system(member: Member) -> str:
+    return (f"{FIRM_CONTEXT}\n\nYou are {member.name}, {member.role} at Hammor Co. "
+            f"{member.persona}\n\n{MEETING_STYLE}")
 
 
-def committee(df: pd.DataFrame, market: dict, sharia_summary: dict, notes: dict, date: str) -> dict:
-    prompt = COMMITTEE_PROMPT.format(
-        date=date,
-        screen=_records(df[df["sharia_status"] == "Compliant"]),
-        market=json.dumps(market, default=str),
-        sharia=json.dumps(sharia_summary, default=str),
-        adx_note=notes.get("ADX", "n/a"),
-        dfm_note=notes.get("DFM", "n/a"),
-    )
-    resp = _call([{"role": "user", "content": prompt}],
-                 output_config={"effort": "high",
-                                "format": {"type": "json_schema", "schema": COMMITTEE_SCHEMA}})
-    return json.loads(_text(resp))
+def _transcript_text(transcript: list[dict]) -> str:
+    return "\n\n".join(f"{t['name']} ({t['role']}): {t['text']}" for t in transcript)
+
+
+class Meeting:
+    """Runs the morning meeting turn by turn and keeps the transcript."""
+
+    def __init__(self, df: pd.DataFrame, market: dict, sharia_summary: dict, date: str):
+        self.df, self.market, self.sharia, self.date = df, market, sharia_summary, date
+        self.transcript: list[dict] = []
+
+    def _data(self, exchange: str | None = None, full: bool = False) -> str:
+        compliant = self.df[self.df["sharia_status"] == "Compliant"]
+        return DATA_BLOCK.format(
+            date=self.date,
+            market=json.dumps(self.market if exchange is None else self.market.get(exchange, {}),
+                              default=str),
+            sharia=json.dumps(self.sharia, default=str),
+            screen=_records(compliant if full else _candidates(self.df, exchange)),
+        )
+
+    def speak(self, member: Member, instruction: str, *, exchange=None, tools=None,
+              effort="medium") -> str:
+        so_far = _transcript_text(self.transcript) or "(You are the first to speak.)"
+        user = (f"{self._data(exchange)}\n\nMEETING SO FAR:\n{so_far}\n\n"
+                f"YOUR TURN, {member.name}:\n{instruction}")
+        try:
+            text = _text(_call(_system(member), user, tools=tools,
+                               output_config={"effort": effort}))
+        except Exception as e:
+            log.exception("%s could not speak", member.name)
+            text = f"(Unavailable this morning: {e})"
+        self.transcript.append({"key": member.key, "name": member.name,
+                                "role": member.role, "text": text})
+        return text
+
+    def run(self) -> dict:
+        # Round 1 – pitches, with web research
+        self.speak(OMAR, PITCH.format(date=self.date, exchange="ADX"),
+                   exchange="ADX", tools=[web_search(5)])
+        self.speak(LAYLA, PITCH.format(date=self.date, exchange="DFM"),
+                   exchange="DFM", tools=[web_search(5)])
+        # Round 2 – challenge
+        self.speak(YOUSEF, CHALLENGE["risk"], tools=[web_search(3)])
+        self.speak(MARIAM, CHALLENGE["income"], tools=[web_search(3)])
+        self.speak(ABDULLAH, CHALLENGE["sharia"])
+        # Round 3 – rebuttal
+        self.speak(OMAR, REBUTTAL, exchange="ADX")
+        self.speak(LAYLA, REBUTTAL, exchange="DFM")
+        # Decision
+        user = (f"{self._data(full=True)}\n\n"
+                f"{DECISION.format(transcript=_transcript_text(self.transcript))}")
+        system = f"{FIRM_CONTEXT}\n\nYou are {SAEED.name}, {SAEED.role} at Hammor Co. {SAEED.persona}"
+        resp = _call(system, user, output_config={
+            "effort": "high", "format": {"type": "json_schema", "schema": COMMITTEE_SCHEMA}})
+        out = json.loads(_text(resp))
+        self.transcript.append({"key": SAEED.key, "name": SAEED.name, "role": SAEED.role,
+                                "text": out.get("closing_remarks", "")})
+        return out
 
 
 # ------------------------------------------------------------- rules-based fallback
-
-def _fmt_range(lo, hi):
-    return f"{lo:.2f} – {hi:.2f}"
-
 
 def rules_committee(df: pd.DataFrame) -> dict:
     comp = df[df["sharia_status"] == "Compliant"]
 
     def pick(row, horizon):
         price = row["price"]
-        support = row["sma50"] or price * 0.97
+        support = row["sma50"] if pd.notna(row["sma50"]) else price * 0.97
         lo, hi = min(price, support) * 0.99, price * 1.01
         upside = {"long_term": 0.15, "medium_term": 0.10, "income": 0.08}[horizon]
         parts = []
@@ -251,10 +304,11 @@ def rules_committee(df: pd.DataFrame) -> dict:
             parts.append(f"ROE {row['roe']:.1%}")
         return {
             "symbol": row["symbol"], "name": row["name"], "exchange": row["exchange"],
-            "action": "Accumulate", "conviction": "Medium", "entry_zone": _fmt_range(lo, hi),
+            "action": "Accumulate", "conviction": "Medium", "entry_zone": f"{lo:.2f} – {hi:.2f}",
             "target_price": round(price * (1 + upside), 2),
             "rationale": "Top quantitative score. " + ", ".join(parts) + ".",
             "key_risk": "Rules-based pick: no analyst review today.",
+            "team_view": "",
         }
 
     picks = {}
@@ -263,7 +317,7 @@ def rules_committee(df: pd.DataFrame) -> dict:
         top = comp.dropna(subset=[col]).nlargest(3, col)
         picks[horizon] = [pick(r, horizon) for _, r in top.iterrows()]
     return {
-        "headline": "Quantitative screen (AI advisors unavailable today)",
+        "headline": "Quantitative screen (the team didn't meet today)",
         "market_overview": "The AI research team didn't run today, so these picks come "
                            "from the quantitative screen only.",
         "picks": picks,
@@ -272,29 +326,24 @@ def rules_committee(df: pd.DataFrame) -> dict:
         "sharia_officer_note": "Screened under AAOIFI Standard 21. Debt and cash are measured "
                                "conservatively (all treated as interest-bearing).",
         "risks": ["Picks are model-generated without analyst review."],
+        "closing_remarks": "",
     }
 
 
-def run_team(df: pd.DataFrame, market: dict, sharia_summary: dict, date: str) -> tuple[dict, dict, bool]:
-    """Returns (committee_output, desk_notes, ai_used)."""
+def run_team(df: pd.DataFrame, market: dict, sharia_summary: dict, date: str) -> tuple[dict, list, bool]:
+    """Returns (decision, meeting_transcript, ai_used)."""
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.warning("ANTHROPIC_API_KEY not set — using the rules-based committee")
-        return rules_committee(df), {}, False
-    notes = {}
-    for ex in ("ADX", "DFM"):
-        try:
-            notes[ex] = analyst_note(ex, df, market, date)
-        except Exception as e:
-            log.exception("%s analyst failed", ex)
-            notes[ex] = f"(Desk note unavailable: {e})"
+        return rules_committee(df), [], False
+    meeting = Meeting(df, market, sharia_summary, date)
     try:
-        out = committee(df, market, sharia_summary, notes, date)
+        out = meeting.run()
     except Exception:
-        log.exception("Investment Committee failed — falling back to rules")
-        return rules_committee(df), notes, False
+        log.exception("Morning meeting failed — falling back to rules")
+        return rules_committee(df), meeting.transcript, False
 
     # Guard: never pass on a pick that isn't Sharia-compliant in our own screen.
     compliant = set(df.loc[df["sharia_status"] == "Compliant", "symbol"])
     for horizon, picks in out["picks"].items():
         out["picks"][horizon] = [p for p in picks if p["symbol"] in compliant]
-    return out, notes, True
+    return out, meeting.transcript, True

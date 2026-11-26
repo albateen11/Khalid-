@@ -1,5 +1,7 @@
 """Offline tests using synthetic market data (no network or API key needed)."""
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -66,18 +68,12 @@ def test_full_pipeline_rules_mode(monkeypatch, tmp_path):
     assert b"sharia_status" in csv
 
 
-def test_committee_guard_drops_noncompliant(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy")
+def _table():
+    from hammor import analysis
     stocks = fake_fetch(UNIVERSE)
     results = {s.company.symbol: sharia.screen(s) for s in stocks}
-    from hammor import analysis
     df = analysis.build_table(stocks, results)
-    fake = advisors.rules_committee(df)
-    fake["picks"]["long_term"].append({**fake["picks"]["long_term"][0], "symbol": "FAB.AD"})
-    monkeypatch.setattr(advisors, "analyst_note", lambda *a, **k: "note")
-    monkeypatch.setattr(advisors, "committee", lambda *a, **k: fake)
-    out, notes, ai = advisors.run_team(df, {}, {}, "today")
-    assert ai and all(p["symbol"] != "FAB.AD" for p in out["picks"]["long_term"])
+    return df, analysis.market_summary(df)
 
 
 class _Block:
@@ -91,17 +87,22 @@ class _Resp:
 
 
 class _FakeClient:
-    """Mimics client.beta.messages.stream(...) with one pause_turn before finishing."""
+    """Mimics client.beta.messages.stream(...). The first call pauses once (pause_turn);
+    calls asking for JSON get a decision that also sneaks in a non-compliant bank."""
 
-    def __init__(self):
-        self.calls = []
+    def __init__(self, decision):
+        self.calls, self.decision = [], decision
         self.beta = self
         self.messages = self
 
     def stream(self, **kwargs):
         self.calls.append(kwargs)
-        resp = _Resp("pause_turn", "") if len(self.calls) == 1 else _Resp("end_turn", "desk note")
-        client = self
+        if len(self.calls) == 1:
+            resp = _Resp("pause_turn", "")
+        elif "format" in kwargs.get("output_config", {}):
+            resp = _Resp("end_turn", json.dumps(self.decision))
+        else:
+            resp = _Resp("end_turn", f"turn {len(self.calls)} speaking")
 
         class _Ctx:
             def __enter__(self_inner):
@@ -115,15 +116,30 @@ class _FakeClient:
         return _Ctx()
 
 
-def test_analyst_call_resumes_pause_turn(monkeypatch):
-    fake = _FakeClient()
+def test_meeting_runs_in_order_and_guards_sharia(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy")
+    df, market = _table()
+    decision = advisors.rules_committee(df)
+    decision["closing_remarks"] = "Meeting closed."
+    decision["picks"]["long_term"].append({**decision["picks"]["long_term"][0], "symbol": "FAB.AD"})
+    fake = _FakeClient(decision)
     monkeypatch.setattr(advisors, "_client", lambda: fake)
-    stocks = fake_fetch(UNIVERSE)
-    results = {s.company.symbol: sharia.screen(s) for s in stocks}
-    from hammor import analysis
-    df = analysis.build_table(stocks, results)
-    note = advisors.analyst_note("DFM", df, analysis.market_summary(df), "today")
-    assert note == "desk note" and len(fake.calls) == 2
-    assert fake.calls[0]["model"] == "claude-opus-5-5"
-    assert fake.calls[0]["fallbacks"] == "default"
+
+    out, transcript, ai = advisors.run_team(df, market, {}, "today")
+
+    assert ai
+    assert [t["name"] for t in transcript] == [
+        "Omar", "Layla", "Yousef", "Mariam", "Abdullah", "Omar", "Layla", "Saeed"]
+    assert transcript[-1]["text"] == "Meeting closed."
+    # Later speakers hear earlier ones.
+    assert "Omar (ADX Equity Analyst)" in fake.calls[-2]["messages"][0]["content"]
+    assert "You are Yousef" in fake.calls[3]["system"]
+    # pause_turn was resumed, and the defaults are right.
     assert fake.calls[1]["messages"][-1]["role"] == "assistant"
+    assert fake.calls[0]["model"] == "claude-opus-5-5" and fake.calls[0]["fallbacks"] == "default"
+    # The non-compliant bank was dropped by the guard.
+    assert all(p["symbol"] != "FAB.AD" for p in out["picks"]["long_term"])
+
+    from hammor import report
+    html = report.render("today", out, transcript, df, market, [], ai)
+    assert "team meeting" in html and "Meet the Hammor Co. team" in html

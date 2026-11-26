@@ -17,13 +17,31 @@ emails you a research report with:
 
 ## The team
 
-| Role | What it does |
-|---|---|
-| Quant screen | Pulls prices and fundamentals for about 65 ADX/DFM stocks and scores every Sharia-compliant stock on three horizons |
-| Sharia screen | AAOIFI Std. 21: business-activity filter, then debt < 30%, cash < 30% of market cap, and non-permissible income < 5% |
-| ADX Equity Analyst | Reviews the top Abu Dhabi candidates and searches the web for the latest news (Claude) |
-| DFM Equity Analyst | Does the same for Dubai (Claude) |
-| Investment Committee | The Chief Investment Advisor and the Sharia Compliance Officer make the final picks (Claude) |
+| Name | Role | Personality and job |
+|---|---|---|
+| **Saeed** | Chief Investment Advisor | 25 years in Gulf markets; calm and decisive. Listens to everyone and makes the final call |
+| **Omar** | ADX Equity Analyst | Covers Abu Dhabi (energy, utilities, industrials). Data-driven; researches the latest news |
+| **Layla** | DFM Equity Analyst | Covers Dubai (real estate, infrastructure, consumer). Spots catalysts early; defends her ideas |
+| **Yousef** | Risk Manager | The healthy sceptic: valuation, overbought stocks, liquidity, oil, rates, concentration |
+| **Mariam** | Dividend & Income Specialist | Checks whether dividends are sustainable, spots yield traps, tracks ex-dividend dates |
+| **Abdullah** | Sharia Compliance Officer | Applies AAOIFI Std. 21, flags borderline names, explains dividend purification |
+
+The personalities are in `hammor/team.py`, and you can edit them.
+
+### The morning meeting
+
+The team talks together every weekday morning. Each person hears everything said before them:
+
+1. **Pitches:** Omar and Layla research the news on the web and pitch their best ideas.
+2. **Challenge:** Yousef questions the risks, Mariam reviews the income angle, and Abdullah checks Sharia compliance. Each responds to the others.
+3. **Response:** Omar and Layla defend, adjust or drop their ideas.
+4. **Decision:** Saeed weighs the discussion, makes the final picks, and closes the meeting.
+
+The email includes the whole conversation, plus a "team view" for each pick showing who backed it and who raised concerns.
+
+Before any of this, a program collects prices and company figures for about 65 stocks, runs the AAOIFI
+Sharia screen (business activity, then debt < 30% and cash < 30% of market cap, and non-permissible income < 5%),
+and scores every compliant stock on three horizons.
 
 A safety rule in the code drops any pick that didn't pass our own Sharia screen, whatever the AI says.
 Companies with mixed activities (conglomerates, supermarkets, exchange houses) are marked
@@ -37,8 +55,8 @@ Companies with mixed activities (conglomerates, supermarkets, exchange houses) a
 3. Copy the 16-character password.
 
 ### 2. Anthropic API key
-Create a key at <https://console.anthropic.com/settings/keys>. The three AI calls cost roughly
-**US$0.30–1.00 per report**; the web searches add about $0.01 each.
+Create a key at <https://console.anthropic.com/settings/keys>. The morning meeting makes 8 AI calls and costs roughly
+**US$1–2 per report** (about $25–40 a month); the web searches add about $0.01 each.
 
 ### 3. Add the secrets to GitHub
 In this repository go to **Settings → Secrets and variables → Actions → New repository secret** and add:
@@ -64,7 +82,8 @@ After that it runs on its own every weekday. The job starts at 08:15, builds the
   classification (`ok`, `islamic_fin`, `review`, `excluded`); review these yourself.
 - **Scoring weights:** `hammor/analysis.py`
 - **Sharia thresholds:** `hammor/sharia.py`
-- **Advisor instructions:** `hammor/advisors.py`
+- **Team personalities:** `hammor/team.py`
+- **Meeting agenda and instructions:** `hammor/advisors.py`
 - **Send time:** the `cron` line in `.github/workflows/daily-report.yml` and `--send-at`
 
 ## Run locally

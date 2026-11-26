@@ -7,6 +7,8 @@ import math
 
 import pandas as pd
 
+from .team import BY_KEY, TEAM
+
 NAVY = "#0b2545"
 GOLD = "#b08d3c"
 GREEN = "#1b7f4b"
@@ -71,6 +73,7 @@ def _pick_cards(picks: list[dict], df: pd.DataFrame) -> str:
     &nbsp;|&nbsp; Target: <b>{num(p['target_price'])}</b> ({pct(upside)})
   </div>
   <div style="font-size:14px;line-height:1.5">{e(p['rationale'])}</div>
+  {f'<div style="font-size:13px;margin-top:6px;font-style:italic;color:#34495e">Team view: {e(p["team_view"])}</div>' if p.get("team_view") else ""}
   <div style="font-size:13px;color:{MUTED};margin-top:6px"><b>Key risk:</b> {e(p['key_risk'])}
   {f" &nbsp;|&nbsp; <b>Purification:</b> ~{purif:.2%} of dividends" if _isnum(purif) and purif > 0 else ""}</div>
 </td></tr></table>""")
@@ -109,7 +112,40 @@ def _screen_table(df: pd.DataFrame) -> str:
             f'font-size:12px"><tr>{head}</tr>{"".join(rows)}</table>')
 
 
-def render(date_str: str, out: dict, notes: dict, df: pd.DataFrame, market: dict,
+def _meeting(transcript: list[dict]) -> str:
+    if not transcript:
+        return ""
+    rounds = {1: "Pitches", 3: "Challenge", 6: "Response", 8: "Decision"}
+    parts = []
+    for i, t in enumerate(transcript, 1):
+        if i in rounds:
+            parts.append(f'<div style="font-size:11px;letter-spacing:1px;text-transform:uppercase;'
+                         f'color:{MUTED};margin:14px 0 6px">{rounds[i]}</div>')
+        m = BY_KEY.get(t["key"])
+        color = m.color if m else NAVY
+        parts.append(f"""<table role="presentation" width="100%" cellspacing="0" style="margin:0 0 10px">
+<tr><td width="40" valign="top"><div style="width:32px;height:32px;border-radius:16px;background:{color};
+color:#fff;font-weight:bold;text-align:center;line-height:32px">{e(t['name'][0])}</div></td>
+<td valign="top" style="background:#f7f8fa;border-left:3px solid {color};padding:8px 12px;border-radius:4px">
+<div style="font-size:13px"><b style="color:{color}">{e(t['name'])}</b>
+<span style="color:{MUTED}"> · {e(t['role'])}</span></div>
+<div style="font-size:13px;line-height:1.5;margin-top:4px">{_paras(t['text'])}</div></td></tr></table>""")
+    return _section("This morning's team meeting", "".join(parts))
+
+
+def _roster() -> str:
+    cells = "".join(
+        f'<td valign="top" style="padding:6px;font-size:12px;width:33%"><b style="color:{m.color}">'
+        f'{e(m.name)}</b><br><span style="color:{MUTED}">{e(m.role)}</span></td>'
+        + ("</tr><tr>" if i % 3 == 2 and i < len(TEAM) - 1 else "")
+        for i, m in enumerate(TEAM))
+    return (f'<table role="presentation" width="100%" cellspacing="0" style="border:1px solid {BORDER};'
+            f'border-radius:8px;margin-top:24px"><tr><td colspan="3" style="padding:8px 6px 0;'
+            f'font-weight:bold;color:{NAVY};font-size:13px">Meet the Hammor Co. team</td></tr>'
+            f'<tr>{cells}</tr></table>')
+
+
+def render(date_str: str, out: dict, transcript: list[dict], df: pd.DataFrame, market: dict,
            failed: list[str], ai_used: bool) -> str:
     sections = [
         _section("Market overview", _paras(out["market_overview"]) + _market_block(market)),
@@ -123,13 +159,11 @@ def render(date_str: str, out: dict, notes: dict, df: pd.DataFrame, market: dict
     if out.get("avoid"):
         items = "".join(f"<li><b>{e(w['symbol'])}</b> – {e(w['reason'])}</li>" for w in out["avoid"])
         sections.append(_section("Stocks to avoid now", f"<ul style='padding-left:18px'>{items}</ul>"))
-    sections.append(_section("Sharia Compliance Officer", _paras(out["sharia_officer_note"])))
+    sections.append(_section("Sharia Compliance Officer – Abdullah", _paras(out["sharia_officer_note"])))
     if out.get("risks"):
         items = "".join(f"<li>{e(r)}</li>" for r in out["risks"])
         sections.append(_section("Key risks", f"<ul style='padding-left:18px'>{items}</ul>"))
-    for ex in ("ADX", "DFM"):
-        if notes.get(ex):
-            sections.append(_section(f"{ex} desk note", f'<div style="font-size:13px">{_paras(notes[ex])}</div>'))
+    sections.append(_meeting(transcript))
     sections.append(_section("Full Sharia screen (AAOIFI Standard 21)",
                              _screen_table(df) + f'<p style="font-size:12px;color:{MUTED}">⚠ = within 17% of an '
                              'AAOIFI limit. Debt and cash use total balances (all treated as interest-bearing), '
@@ -137,7 +171,7 @@ def render(date_str: str, out: dict, notes: dict, df: pd.DataFrame, market: dict
     if failed:
         sections.append(f'<p style="font-size:12px;color:{MUTED}">No data today for: {e(", ".join(failed))}</p>')
 
-    mode = "AI research team + quantitative screen" if ai_used else "Quantitative screen only"
+    mode = "Saeed, Omar, Layla, Yousef, Mariam and Abdullah, plus the quantitative screen" if ai_used else "Quantitative screen only"
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Hammor Co. Daily Report</title></head>
 <body style="margin:0;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif;color:#1d2733">
@@ -152,6 +186,7 @@ def render(date_str: str, out: dict, notes: dict, df: pd.DataFrame, market: dict
   <h1 style="font-size:20px;color:{NAVY};margin:18px 0 4px">{e(out['headline'])}</h1>
   <div style="font-size:12px;color:{MUTED}">Prepared by: {mode}</div>
   {''.join(sections)}
+  {_roster() if ai_used else ""}
   <p style="font-size:11px;color:{MUTED};margin-top:28px;border-top:1px solid {BORDER};padding-top:12px">
   This report is generated automatically for your personal information. It is not investment advice from an
   SCA-licensed adviser. Market data comes from free, delayed sources and may be incomplete or wrong. Check the
