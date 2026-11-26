@@ -1,0 +1,47 @@
+name: Hammor Co. daily report
+
+on:
+  schedule:
+    # 04:15 UTC = 08:15 UAE, Monday–Friday. GitHub can start scheduled jobs late,
+    # so the job starts early, builds the report, and waits to send it at 09:00 UAE time.
+    - cron: "15 4 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      send:
+        description: "Send the email (false = build and upload the report only)"
+        type: boolean
+        default: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build and send report
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          REPORT_TO: ${{ secrets.REPORT_TO }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.send }}" = "true" ]; then
+              python -m hammor.main --force
+            else
+              python -m hammor.main --force --dry-run
+            fi
+          else
+            python -m hammor.main --send-at 09:00
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hammor-report
+          path: output/
+          retention-days: 30
