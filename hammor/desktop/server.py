@@ -3,9 +3,9 @@
     python -m hammor.desktop            # start and open the office window
     python -m hammor.desktop --selftest # check the app starts, then exit
 
-The window shows the six team members around a meeting table. It can:
-  * replay a morning meeting that GitHub held and saved to reports/latest.json
-  * hold a LIVE meeting on this computer (needs a Claude API key, about US$1–2 each)
+The window shows the six team members around a meeting table and replays the
+morning meeting GitHub held and saved to reports/ (today's, or any earlier day),
+followed by the team's advice.
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ import time
 import urllib.error
 import urllib.request
 import webbrowser
-from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -58,7 +57,7 @@ def app_dir() -> Path:
 
 def load_settings() -> dict:
     p = app_dir() / "settings.json"
-    s = {"anthropic_key": "", "github_token": "", "repo": DEFAULT_REPO, "branch": DEFAULT_BRANCH}
+    s = {"github_token": "", "repo": DEFAULT_REPO, "branch": DEFAULT_BRANCH}
     try:
         s.update(json.loads(p.read_text(encoding="utf-8")))
     except (OSError, ValueError):
@@ -68,12 +67,12 @@ def load_settings() -> dict:
 
 def save_settings(update: dict) -> dict:
     s = load_settings()
-    for k in ("anthropic_key", "github_token", "repo", "branch"):
+    for k in ("github_token", "repo", "branch"):
         v = update.get(k)
         if isinstance(v, str) and v.strip():
             s[k] = v.strip()
     for k in update.get("clear", []):
-        if k in ("anthropic_key", "github_token"):
+        if k == "github_token":
             s[k] = ""
     (app_dir() / "settings.json").write_text(json.dumps(s, indent=2), encoding="utf-8")
     return s
@@ -81,8 +80,7 @@ def save_settings(update: dict) -> dict:
 
 def public_settings() -> dict:
     s = load_settings()
-    return {"has_anthropic_key": bool(s["anthropic_key"] or os.environ.get("ANTHROPIC_API_KEY")),
-            "has_github_token": bool(s["github_token"]), "repo": s["repo"], "branch": s["branch"]}
+    return {"has_github_token": bool(s["github_token"]), "repo": s["repo"], "branch": s["branch"]}
 
 
 # --------------------------------------------------------- meetings from GitHub
@@ -138,50 +136,6 @@ def history() -> list[str]:
     return sorted(dates, reverse=True)[:60]
 
 
-# --------------------------------------------------------------- live meeting
-
-class LiveSession:
-    def __init__(self):
-        self.events: list[dict] = []
-        self.cond = threading.Condition()
-        self.running = False
-
-    def emit(self, event: dict) -> None:
-        with self.cond:
-            event = {**event, "seq": len(self.events)}
-            self.events.append(event)
-            self.cond.notify_all()
-
-    def start(self, api_key: str) -> bool:
-        with self.cond:
-            if self.running:
-                return False
-            self.running, self.events = True, []
-        threading.Thread(target=self._run, args=(api_key,), daemon=True).start()
-        return True
-
-    def _run(self, api_key: str) -> None:
-        from .. import main as pipeline  # heavy imports only when needed
-        os.environ["ANTHROPIC_API_KEY"] = api_key
-        try:
-            self.emit({"type": "begin", "at": datetime.now().isoformat(timespec="seconds")})
-            record = pipeline.run_pipeline(on_event=self.emit)
-            data = json.loads(pipeline.meeting_json(record))
-            data["_source"] = "live"
-            stamp = datetime.now().strftime("%H%M")
-            (app_dir() / "meetings" / f"{data['date']}-live-{stamp}.json").write_text(
-                json.dumps(data, ensure_ascii=False), encoding="utf-8")
-            self.emit({"type": "done", "record": data})
-        except Exception as e:  # report to the window instead of dying silently
-            log.exception("Live meeting failed")
-            self.emit({"type": "error", "text": str(e)})
-        finally:
-            with self.cond:
-                self.running = False
-                self.cond.notify_all()
-
-
-LIVE = LiveSession()
 LAST_PING = [time.time()]
 
 
@@ -237,10 +191,6 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"record": rec})
         elif url.path == "/api/history":
             self._json({"dates": history()})
-        elif url.path == "/api/live/status":
-            self._json({"running": LIVE.running, "events": len(LIVE.events)})
-        elif url.path == "/api/live/events":
-            self._sse(int((q.get("from") or ["0"])[0]))
         else:
             self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
@@ -250,44 +200,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/settings":
             save_settings(self._body())
             self._json(public_settings())
-        elif url.path == "/api/live/start":
-            key = load_settings()["anthropic_key"] or os.environ.get("ANTHROPIC_API_KEY", "")
-            if not key:
-                self._json({"error": "Add your Claude API key in Settings first."},
-                           HTTPStatus.BAD_REQUEST)
-            elif not LIVE.start(key):
-                self._json({"error": "A live meeting is already running."}, HTTPStatus.CONFLICT)
-            else:
-                self._json({"ok": True})
         else:
             self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
-
-    def _sse(self, start: int):
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
-        i = start
-        try:
-            while True:
-                with LIVE.cond:
-                    if i >= len(LIVE.events) and LIVE.running:
-                        LIVE.cond.wait(timeout=15)
-                    batch = LIVE.events[i:]
-                    running = LIVE.running
-                for ev in batch:
-                    self.wfile.write(f"data: {json.dumps(ev, ensure_ascii=False)}\n\n".encode())
-                i += len(batch)
-                if not batch:
-                    self.wfile.write(b": keep-alive\n\n")
-                self.wfile.flush()
-                LAST_PING[0] = time.time()
-                if not running and i >= len(LIVE.events):
-                    return
-        except (BrokenPipeError, ConnectionResetError, OSError):
-            return
-
 
 # --------------------------------------------------------------- app window
 
@@ -321,7 +235,7 @@ def _already_running(port: int) -> bool:
 def _watchdog(server: ThreadingHTTPServer) -> None:
     while True:
         time.sleep(30)
-        if not LIVE.running and time.time() - LAST_PING[0] > IDLE_EXIT_SECONDS:
+        if time.time() - LAST_PING[0] > IDLE_EXIT_SECONDS:
             log.info("Window closed; shutting down")
             server.shutdown()
             return
@@ -342,11 +256,6 @@ def serve(port: int = PORT, open_browser: bool = True) -> None:
 
 
 def selftest() -> int:
-    import anthropic  # noqa: F401  (checks the bundle contains everything)
-    import pandas  # noqa: F401
-    import yfinance  # noqa: F401
-
-    from .. import main as _main  # noqa: F401
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]

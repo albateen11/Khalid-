@@ -102,6 +102,11 @@ sharia_officer_note: Abdullah's compliance conclusions in 3–5 sentences, inclu
 risks: 3–5 key risks, building on Yousef's points.
 closing_remarks: what you say to close the meeting, in at most 120 words, in your own voice,
 explaining the main decisions and whose argument won where the team disagreed.
+client_advice: the team's advice to the client, written directly to them ("you") in plain,
+warm language with no jargon, 5–8 sentences. Say clearly what to do today (buy, add, wait or
+hold cash) and name the stocks, suggest a simple split of new money across the long-term,
+growth and income lists (for example 50/25/25) and how much to keep in cash, say what to avoid,
+and give one reminder about Sharia purification. Base it on what the team agreed in the meeting.
 headline: one line summarising today's view. market_overview: 3–5 sentences.
 Use ONLY symbols from the data, and pick only stocks whose sharia_status is "Compliant".
 
@@ -152,9 +157,10 @@ COMMITTEE_SCHEMA = {
         "sharia_officer_note": {"type": "string"},
         "risks": {"type": "array", "items": {"type": "string"}},
         "closing_remarks": {"type": "string"},
+        "client_advice": {"type": "string"},
     },
     "required": ["headline", "market_overview", "picks", "watchlist", "avoid",
-                 "sharia_officer_note", "risks", "closing_remarks"],
+                 "sharia_officer_note", "risks", "closing_remarks", "client_advice"],
     "additionalProperties": False,
 }
 
@@ -375,6 +381,9 @@ def rules_committee(df: pd.DataFrame) -> dict:
                                "conservatively (all treated as interest-bearing).",
         "risks": ["Picks are model-generated without analyst review."],
         "closing_remarks": "",
+        "client_advice": "The team didn't meet today, so there is no personal advice. The picks below come "
+                         "from the numbers only. Treat them as a starting list to research, not as "
+                         "recommendations to act on.",
     }
 
 

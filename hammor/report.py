@@ -150,7 +150,12 @@ def _roster() -> str:
 
 def render(date_str: str, out: dict, transcript: list[dict], df: pd.DataFrame, market: dict,
            failed: list[str], ai_used: bool) -> str:
+    advice = out.get("client_advice")
     sections = [
+        (f'<div style="background:#fbf6e9;border:1px solid {GOLD};border-radius:10px;padding:14px 18px;margin:18px 0 0">'
+         f'<div style="font-size:16px;font-weight:bold;color:{NAVY};margin-bottom:6px">Our advice to you</div>'
+         f'<div style="font-size:14.5px;line-height:1.6">{_paras(advice)}</div>'
+         f'<div style="font-size:12px;color:{MUTED}">From Saeed and the Hammor Co. team</div></div>') if advice else "",
         _section("Market overview", _paras(out["market_overview"]) + _market_block(market)),
         _section("Long-term opportunities (1+ years)", _pick_cards(out["picks"]["long_term"], df)),
         _section("Medium-term growth (3–12 months)", _pick_cards(out["picks"]["medium_term"], df)),

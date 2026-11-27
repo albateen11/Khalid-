@@ -60,6 +60,7 @@ def test_full_pipeline_rules_mode(monkeypatch, tmp_path):
     assert '"transcript"' in main.meeting_json(record)
     assert "Hammor Co." in subject
     assert "Long-term opportunities" in html and "Income and dividends" in html
+    assert "Our advice to you" in html
     # Excluded companies (conventional banks) must never be recommended.
     picks_html = html.split("Full Sharia screen")[0]
     for c in UNIVERSE:
@@ -153,6 +154,6 @@ def test_desktop_selftest(monkeypatch, tmp_path):
     monkeypatch.setenv("APPDATA", str(tmp_path))
     from hammor.desktop import server
     assert server.selftest() == 0
-    server.save_settings({"anthropic_key": "sk-test"})
-    assert server.public_settings()["has_anthropic_key"]
-    assert "sk-test" not in json.dumps(server.public_settings())
+    server.save_settings({"github_token": "ghp-secret"})
+    assert server.public_settings()["has_github_token"]
+    assert "ghp-secret" not in json.dumps(server.public_settings())

@@ -34,7 +34,6 @@ header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:
 .sub{color:var(--muted);font-size:12px}
 .spacer{flex:1}
 .badge{font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
-.badge.live{color:#fff;background:var(--red);border-color:transparent;animation:blink 1.6s infinite}
 @keyframes blink{50%{opacity:.6}}
 .btn{border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:8px 14px;border-radius:8px}
 .btn:hover{border-color:rgba(255,255,255,.25)}
@@ -134,6 +133,11 @@ main{display:grid;grid-template-columns:minmax(460px,1.05fr) minmax(380px,1fr);g
 .pick p{margin:6px 0;font-size:13px;color:#d3dce8}
 .pick .tv{font-style:italic;color:var(--muted)}
 .pick .risk{font-size:12px;color:var(--muted)}
+.advice{background:linear-gradient(180deg,rgba(212,175,55,.16),rgba(212,175,55,.06));border:1px solid rgba(212,175,55,.45);
+  border-radius:14px;padding:16px 20px;margin:14px 0 6px}
+.advice h3{margin:0 0 6px;color:var(--gold2);font-size:16px}
+.advice p{margin:0 0 8px;font-size:15px;line-height:1.65;color:#f3ead2;white-space:pre-wrap}
+.advice .from{font-size:12px;color:var(--muted)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px}
 .box{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
 .box h4{margin:0 0 6px;font-size:13px;color:var(--gold)}
@@ -155,14 +159,14 @@ main{display:grid;grid-template-columns:minmax(460px,1.05fr) minmax(380px,1fr);g
 .error{background:rgba(224,96,90,.12);border:1px solid rgba(224,96,90,.4);color:#ffd2cf;border-radius:10px;padding:10px 14px;margin:0 22px;display:none}
 .error.show{display:block}
 
-body.static #liveBtn, body.static #settingsBtn{display:none}
+body.static #settingsBtn{display:none}
 @media (max-width:700px){
   header{position:static;flex-wrap:wrap;gap:8px 10px;padding:10px 14px;padding-top:max(10px, env(safe-area-inset-top))}
   select.btn{padding-right:30px}
   .logo{font-size:17px} .sub{display:none} #source{order:2}
   header .spacer{display:none}
   header .btn{padding:7px 10px;font-size:13px}
-  #history{order:3;flex:1;min-width:0} #replayBtn{order:4} #liveBtn{order:5} #settingsBtn{order:6}
+  #history{order:3;flex:1;min-width:0} #replayBtn{order:4} #settingsBtn{order:5}
   .ticker{overflow-x:auto;padding:8px 14px;gap:18px;scrollbar-width:none}
   .stages{padding:10px 14px;gap:6px} .stage{font-size:11px} .stage + .stage::before{width:10px}
   .stagetext{width:100%;margin-left:0}
@@ -195,8 +199,7 @@ body.static #liveBtn, body.static #settingsBtn{display:none}
     <span class="badge" id="source">Loading…</span>
     <div class="spacer"></div>
     <select class="btn" id="history" title="Previous meetings"><option value="">Previous meetings</option></select>
-    <button class="btn" id="replayBtn">▶ Replay this morning</button>
-    <button class="btn primary" id="liveBtn">● Start live meeting</button>
+    <button class="btn primary" id="replayBtn">▶ Watch this morning's meeting</button>
     <button class="btn" id="settingsBtn" title="Settings">⚙</button>
   </header>
   <div class="ticker" id="ticker"><span>Market data appears here once a meeting is loaded.</span></div>
@@ -228,23 +231,12 @@ body.static #liveBtn, body.static #settingsBtn{display:none}
 <div class="modal" id="settingsModal">
   <div class="dialog">
     <h3>Settings</h3>
-    <label>Claude API key (needed for live meetings)</label>
-    <input id="sKey" type="password" placeholder="sk-ant-…  (leave empty to keep the current key)" autocomplete="off">
-    <div class="hint" id="sKeyHint"></div>
     <label>GitHub token (only if your repository is private)</label>
     <input id="sTok" type="password" placeholder="leave empty if the repository is public" autocomplete="off">
     <label>Repository</label><input id="sRepo">
     <label>Branch</label><input id="sBranch">
-    <div class="hint">Keys are saved only on this computer, in %APPDATA%\HammorCo\settings.json.</div>
+    <div class="hint">Saved only on this computer, in %APPDATA%\HammorCo\settings.json.</div>
     <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="saveSettings">Save</button></div>
-  </div>
-</div>
-<div class="modal" id="liveModal">
-  <div class="dialog">
-    <h3>Start a live meeting?</h3>
-    <p>The team will collect fresh market data (about 2–3 minutes), then meet and debate in front of you (about 5–10 minutes).</p>
-    <p class="sub">This uses your Claude API key and costs about US$1–2. The 9:00 email from GitHub is not affected.</p>
-    <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="confirmLive">Start meeting</button></div>
   </div>
 </div>
 <div class="toast" id="toast"><span id="toastText"></span><button class="btn primary" id="toastBtn">Watch</button></div>
@@ -269,8 +261,7 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 
 let STATIC = false;       // true on the phone/web version (no local server)
 let current = null;        // record being shown
-let mode = "idle";         // idle | replay | live
-let liveSource = null;
+let mode = "idle";         // idle | replay
 
 /* ---------------- room + stages ---------------- */
 function buildRoom(){
@@ -357,7 +348,12 @@ function renderResults(rec){
   const d = rec.decision; if (!d) return;
   const prices = Object.fromEntries((rec.screen||[]).map(r => [r.symbol, r]));
   box.append(el("div","sub", (rec.date_label||rec.date||"") + (rec.ai_used ? " · Decision by Saeed after the team meeting" : " · Quantitative screen only")));
-  box.append(el("h2","", d.headline), el("p","overview", d.market_overview));
+  box.append(el("h2","", d.headline));
+  if (d.client_advice){
+    const a = el("div","advice"); a.append(el("h3","","Our advice to you"), el("p","", d.client_advice), el("div","from","From Saeed and the Hammor Co. team"));
+    box.append(a);
+  }
+  box.append(el("p","overview", d.market_overview));
   const cols = el("div","cols");
   for (const [k, title] of [["long_term","Long-term · 1+ years"],["medium_term","Growth · 3–12 months"],["income","Income · dividends"]]){
     const col = el("div","col"); col.append(el("h3","",title));
@@ -418,10 +414,10 @@ function resetStage(rec){
   setStage("", "");
 }
 async function replay(rec){
-  stopLive(); player.token++; player.skip = false; player.paused = false; $("#pauseBtn").textContent = "⏸ Pause";
+  player.token++; player.skip = false; player.paused = false; $("#pauseBtn").textContent = "⏸ Pause";
   current = rec; mode = "replay"; setControls(true);
   const tok = player.token;
-  const label = rec._source === "live" ? "Live meeting (saved)" : rec._source === "local" ? "Saved meeting" : "This morning's meeting";
+  const label = rec._source === "local" ? "Saved meeting" : "This morning's meeting";
   $("#source").textContent = `${label} · ${rec.date}`; $("#source").className = "badge";
   resetStage(rec);
   try {
@@ -454,53 +450,6 @@ async function replay(rec){
 }
 function setControls(on){ $("#controls").style.visibility = on ? "visible" : "hidden"; }
 
-/* ---------------- live engine ---------------- */
-function stopLive(){ if (liveSource){ liveSource.close(); liveSource = null; } }
-function goLive(from=0){
-  player.token++; stopLive(); mode = "live"; setControls(false);
-  $("#source").textContent = "LIVE"; $("#source").className = "badge live";
-  if (from === 0){ resetStage(null); emptyFeed("The team is gathering", "Collecting fresh market data from ADX and DFM…"); }
-  $("#liveBtn").disabled = true;
-  liveSource = new EventSource(`/api/live/events?from=${from}`);
-  liveSource.onmessage = ev => handleLive(JSON.parse(ev.data));
-  liveSource.onerror = () => { if (mode !== "live") stopLive(); };
-}
-let feedPrimed = false;
-function handleLive(e){
-  switch (e.type){
-    case "begin": feedPrimed = false; TEAM.forEach(m => setStatus(m.key, "data")); break;
-    case "stage":
-      if (e.stage === "data" || e.stage === "screen") setStage("data", e.text);
-      else setStage(e.stage, e.text);
-      break;
-    case "progress":
-      $("#stageText").textContent = `Collecting market data ${e.done}/${e.total} · ${e.text}`;
-      $("#bar").style.width = (e.done / e.total * 100 / STAGES.length) + "%"; break;
-    case "market": renderTicker(e.market); $("#dateLabel").textContent = new Date().toDateString(); break;
-    case "turn_start":
-      if (!feedPrimed){ clearFeed(); feedPrimed = true; }
-      if (e.round) setStage(e.round, `${e.name} has the floor`);
-      setActive(e.who); setStatus(e.who, "ready"); $("#tableNote").textContent = `${e.name} · ${e.role}`;
-      if (e.who !== "chief") startMsg(e.who, e.round); else addDivider("decision");
-      break;
-    case "status": setStatus(e.who, e.status, e.detail); break;
-    case "delta": { const n = openMsgs[e.who]; if (n){ n.textContent += e.text; scrollFeed(); } break; }
-    case "turn_end":
-      if (e.who === "chief"){ const n = startMsg("chief","decision"); setStatus("chief","speaking"); player.skip = false; player.speed = 1;
-        typeInto(n, e.text).catch(()=>{}).finally(() => { endMsg("chief"); setStatus("chief","done"); }); }
-      else { const n = openMsgs[e.who]; if (n) n.textContent = e.text; endMsg(e.who); setStatus(e.who, "done"); }
-      break;
-    case "done":
-      current = e.record; mode = "idle"; stopLive(); setActive(null);
-      setStage("complete","Meeting closed · decision below"); $("#tableNote").textContent = "See the decision below";
-      $("#source").textContent = `Live meeting · ${e.record.date}`; $("#source").className = "badge";
-      renderResults(e.record); $("#liveBtn").disabled = false; loadHistory(); break;
-    case "error":
-      mode = "idle"; stopLive(); $("#liveBtn").disabled = false;
-      $("#error").textContent = "The live meeting stopped: " + e.text; $("#error").classList.add("show"); break;
-  }
-}
-
 /* ---------------- data loading ---------------- */
 async function api(path, opts){ const r = await fetch(path, opts); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; }
 async function getRecord(date){
@@ -516,7 +465,7 @@ async function loadLatest(date){
     if (!record){ $("#source").textContent = "No meeting yet"; resetStage(null);
       emptyFeed("No meeting saved yet", STATIC
         ? "The team meets every weekday at 9:00 UAE time. Their meeting will appear here shortly afterwards."
-        : "GitHub holds the meeting every weekday at 9:00 UAE time, and it will appear here automatically. You can also press “Start live meeting” to watch the team now.");
+        : "GitHub holds the meeting every weekday at 9:00 UAE time, and it will appear here automatically.");
       return null; }
     replay(record); return record;
   } catch (err) { emptyFeed("Couldn't load the meeting", String(err)); return null; }
@@ -550,24 +499,13 @@ $("#history").onchange = ev => { if (ev.target.value) loadLatest(ev.target.value
 document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => b.closest(".modal").classList.remove("show"));
 $("#settingsBtn").onclick = async () => {
   const s = await api("/api/settings");
-  $("#sKey").value = ""; $("#sTok").value = ""; $("#sRepo").value = s.repo; $("#sBranch").value = s.branch;
-  $("#sKeyHint").textContent = s.has_anthropic_key ? "✓ A key is saved." : "No key saved yet. Create one at console.anthropic.com.";
+  $("#sTok").value = ""; $("#sRepo").value = s.repo; $("#sBranch").value = s.branch;
   $("#settingsModal").classList.add("show");
 };
 $("#saveSettings").onclick = async () => {
   await api("/api/settings", {method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({anthropic_key:$("#sKey").value, github_token:$("#sTok").value, repo:$("#sRepo").value, branch:$("#sBranch").value})});
+    body: JSON.stringify({github_token:$("#sTok").value, repo:$("#sRepo").value, branch:$("#sBranch").value})});
   $("#settingsModal").classList.remove("show"); loadHistory();
-};
-$("#liveBtn").onclick = async () => {
-  const s = await api("/api/settings");
-  if (!s.has_anthropic_key){ $("#settingsBtn").click(); return; }
-  $("#liveModal").classList.add("show");
-};
-$("#confirmLive").onclick = async () => {
-  $("#liveModal").classList.remove("show");
-  try { await api("/api/live/start", {method:"POST"}); goLive(0); }
-  catch (err) { $("#error").textContent = String(err.message || err); $("#error").classList.add("show"); }
 };
 setInterval(() => { $("#clock").textContent = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}); }, 1000);
 setInterval(() => { if (!STATIC) fetch("/api/ping").catch(()=>{}); }, 60_000);
@@ -578,10 +516,7 @@ setInterval(checkForNew, 10 * 60_000);
   STATIC = !(await fetch("/api/ping").then(r => r.ok).catch(() => false));
   if (STATIC){ document.body.classList.add("static"); }
   loadHistory();
-  if (STATIC){ loadLatest(); return; }
-  const st = await api("/api/live/status").catch(() => ({running:false}));
-  if (st.running) { resetStage(null); goLive(0); }
-  else loadLatest();
+  loadLatest();
 })();
 </script>
 </body>

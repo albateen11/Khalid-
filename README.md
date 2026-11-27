@@ -5,6 +5,8 @@
 Every Monday to Friday at **09:00 UAE time**, an hour before the market opens, Hammor Co.
 emails you a research report with:
 
+- **Our advice to you**: the team speaks to you directly in plain language: what to do today, how to split new money
+  between the three horizons, what to avoid, and a purification reminder
 - **Market overview** for ADX and DFM: breadth, top gainers and losers
 - **Long-term opportunities** (1+ years): quality and value
 - **Medium-term growth** (3–12 months): momentum and earnings
@@ -82,8 +84,6 @@ The **Hammor Co. office** opens a window with the six team members around a meet
 - **Replay:** every weekday, after the 9:00 email, GitHub saves the morning meeting in `reports/`.
   When you open the app, it replays that meeting: each person "thinks", "searches the news", and speaks
   in turn while the conversation types out. You can pause it, speed it up (2× or 4×), or skip to the decision.
-- **Live meeting:** press **● Start live meeting** to watch the team collect fresh data and debate in real time,
-  word by word. This needs your Claude API key in ⚙ Settings and costs about US$1–2 each time.
 - **Previous meetings:** choose any earlier day from the drop-down list.
 - While the app is open, it checks every 10 minutes for a new morning meeting and tells you when one is ready.
 
@@ -92,7 +92,6 @@ The **Hammor Co. office** opens a window with the six team members around a meet
 Windows may say *"Windows protected your PC"* because the app isn't code-signed: click **More info → Run anyway**.
 GitHub rebuilds the app automatically whenever the code changes.
 
-Your keys are saved only on your computer, in `%APPDATA%\HammorCo\settings.json`.
 The app closes itself about 15 minutes after you close its window.
 
 *Developers:* `python -m hammor.desktop` runs the same app from source.
@@ -104,7 +103,7 @@ Every weekday after the 9:00 meeting it updates automatically. Open it in Safari
 then choose **Share → Add to Home Screen** (iPhone) or **⋮ → Add to Home screen** (Android) so it opens like an app.
 
 **One-time setup:** in the repository go to **Settings → Pages → Build and deployment → Source** and choose
-**GitHub Actions**. Live meetings are started from the desktop app only; the phone shows the meetings GitHub held.
+**GitHub Actions**.
 
 ## Customising
 
