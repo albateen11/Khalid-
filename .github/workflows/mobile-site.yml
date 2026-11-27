@@ -1,0 +1,54 @@
+name: Publish mobile office (GitHub Pages)
+
+# Publishes the office page and the saved meetings so you can watch them on your phone.
+# One-time setup: Settings → Pages → Build and deployment → Source: "GitHub Actions".
+on:
+  workflow_run:
+    workflows: ["Hammor Co. daily report"]
+    types: [completed]
+  push:
+    paths:
+      - "hammor/desktop/office.html"
+      - "web/**"
+      - "reports/**"
+      - ".github/workflows/mobile-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Build the site
+        run: |
+          mkdir -p site/reports
+          cp hammor/desktop/office.html site/index.html
+          cp web/manifest.webmanifest web/icon-192.png web/icon-512.png site/
+          if [ -d reports ]; then cp reports/*.json site/reports/ 2>/dev/null || true; fi
+          python3 - <<'PY'
+          import json, pathlib
+          dates = sorted((p.stem for p in pathlib.Path("site/reports").glob("2*.json")), reverse=True)
+          pathlib.Path("site/reports/index.json").write_text(json.dumps({"dates": dates}))
+          print(f"{len(dates)} meetings published")
+          PY
+          touch site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

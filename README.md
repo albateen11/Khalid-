@@ -97,6 +97,15 @@ The app closes itself about 15 minutes after you close its window.
 
 *Developers:* `python -m hammor.desktop` runs the same app from source.
 
+## On your phone
+
+The same office is published as a mobile web page: **https://albateen11.github.io/Khalid-/**
+Every weekday after the 9:00 meeting it updates automatically. Open it in Safari or Chrome to watch the replay,
+then choose **Share → Add to Home Screen** (iPhone) or **⋮ → Add to Home screen** (Android) so it opens like an app.
+
+**One-time setup:** in the repository go to **Settings → Pages → Build and deployment → Source** and choose
+**GitHub Actions**. Live meetings are started from the desktop app only; the phone shows the meetings GitHub held.
+
 ## Customising
 
 - **Add or remove stocks:** edit `hammor/universe.py`. Each company has a business-activity

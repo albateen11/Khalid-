@@ -37,10 +37,14 @@ DEFAULT_BRANCH = "claude/hammor-stock-analysis-uae-cccy7x"
 IDLE_EXIT_SECONDS = 15 * 60  # quit when the window has been closed this long
 
 
-def resource(name: str) -> Path:
+def resource(name: str, folder: str = "hammor/desktop") -> Path:
     """Path to a bundled file, both from source and inside the PyInstaller .exe."""
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
-    return base / "hammor" / "desktop" / name
+    return base / folder / name
+
+
+WEB_FILES = {"/manifest.webmanifest": "application/manifest+json",
+             "/icon-192.png": "image/png", "/icon-512.png": "image/png"}
 
 
 def app_dir() -> Path:
@@ -213,6 +217,14 @@ class Handler(BaseHTTPRequestHandler):
             body = resource("office.html").read_bytes()
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif url.path in WEB_FILES:
+            f = resource(url.path.lstrip("/"), "web")
+            body = f.read_bytes() if f.exists() else b""
+            self.send_response(HTTPStatus.OK if body else HTTPStatus.NOT_FOUND)
+            self.send_header("Content-Type", WEB_FILES[url.path])
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

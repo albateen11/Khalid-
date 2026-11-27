@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hammor Co. Office</title>
+<meta name="theme-color" content="#0c1726">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hammor Co.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
 <style>
 :root{
   --bg:#0c1726; --bg2:#0f1d31; --panel:#132339; --panel2:#182b45; --line:rgba(255,255,255,.08);
@@ -147,6 +155,32 @@ main{display:grid;grid-template-columns:minmax(460px,1.05fr) minmax(380px,1fr);g
 .error{background:rgba(224,96,90,.12);border:1px solid rgba(224,96,90,.4);color:#ffd2cf;border-radius:10px;padding:10px 14px;margin:0 22px;display:none}
 .error.show{display:block}
 
+body.static #liveBtn, body.static #settingsBtn{display:none}
+@media (max-width:700px){
+  header{position:static;flex-wrap:wrap;gap:8px 10px;padding:10px 14px;padding-top:max(10px, env(safe-area-inset-top))}
+  select.btn{padding-right:30px}
+  .logo{font-size:17px} .sub{display:none} #source{order:2}
+  header .spacer{display:none}
+  header .btn{padding:7px 10px;font-size:13px}
+  #history{order:3;flex:1;min-width:0} #replayBtn{order:4} #liveBtn{order:5} #settingsBtn{order:6}
+  .ticker{overflow-x:auto;padding:8px 14px;gap:18px;scrollbar-width:none}
+  .stages{padding:10px 14px;gap:6px} .stage{font-size:11px} .stage + .stage::before{width:10px}
+  .stagetext{width:100%;margin-left:0}
+  .bar{margin:0 14px}
+  main{padding:10px 10px 18px;gap:12px}
+  .room{min-height:0;padding:10px}
+  .floor{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 6px;min-height:0;margin:8px 0}
+  .floor .table{position:static;transform:none;width:auto;height:auto;border-radius:12px;grid-column:1 / -1;padding:10px;order:-1}
+  .seat{position:static;transform:none;width:auto}
+  .seat.active{transform:scale(1.04)}
+  .avatar{width:48px;height:48px;font-size:19px}
+  .rl{font-size:10.5px} .st{font-size:10.5px;max-width:100%}
+  .chat{min-height:0;max-height:none}
+  .feed{max-height:70vh}
+  .results{padding:14px}
+  .kv{grid-template-columns:1fr 1fr 1fr}
+  .toast{left:12px;right:12px;bottom:max(12px, env(safe-area-inset-bottom))}
+}
 @media (max-width:1050px){main{grid-template-columns:1fr}.chat{max-height:none}.cols{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -233,6 +267,7 @@ const RESEARCHERS = new Set(["adx","dfm","risk","income"]);
 const $ = s => document.querySelector(s);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
+let STATIC = false;       // true on the phone/web version (no local server)
 let current = null;        // record being shown
 let mode = "idle";         // idle | replay | live
 let liveSource = null;
@@ -468,25 +503,36 @@ function handleLive(e){
 
 /* ---------------- data loading ---------------- */
 async function api(path, opts){ const r = await fetch(path, opts); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; }
+async function getRecord(date){
+  if (!STATIC) return (await api("/api/latest" + (date ? `?date=${date}` : ""))).record;
+  const r = await fetch(`reports/${date || "latest"}.json?t=${Date.now()}`, {cache:"no-store"});
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(r.statusText);
+  return {...(await r.json()), _source:"github"};
+}
 async function loadLatest(date){
   try {
-    const {record} = await api("/api/latest" + (date ? `?date=${date}` : ""));
+    const record = await getRecord(date);
     if (!record){ $("#source").textContent = "No meeting yet"; resetStage(null);
-      emptyFeed("No meeting saved yet", "GitHub holds the meeting every weekday at 9:00 UAE time, and it will appear here automatically. You can also press “Start live meeting” to watch the team now.");
+      emptyFeed("No meeting saved yet", STATIC
+        ? "The team meets every weekday at 9:00 UAE time. Their meeting will appear here shortly afterwards."
+        : "GitHub holds the meeting every weekday at 9:00 UAE time, and it will appear here automatically. You can also press “Start live meeting” to watch the team now.");
       return null; }
     replay(record); return record;
   } catch (err) { emptyFeed("Couldn't load the meeting", String(err)); return null; }
 }
 async function loadHistory(){
   try {
-    const {dates} = await api("/api/history"); const sel = $("#history");
+    const {dates} = STATIC ? await (await fetch(`reports/index.json?t=${Date.now()}`, {cache:"no-store"})).json()
+                           : await api("/api/history");
+    const sel = $("#history");
     sel.length = 1; for (const d of dates) sel.append(new Option(d, d));
   } catch (_) {}
 }
 async function checkForNew(){
   if (mode !== "idle") return;
   try {
-    const {record} = await api("/api/latest");
+    const record = await getRecord();
     if (record && (!current || record.date > current.date || (record.generated_at||"") > (current.generated_at||""))){
       if (current && current._source === record._source && record.generated_at === current.generated_at) return;
       $("#toastText").textContent = `A new meeting from ${record.date} is ready.`;
@@ -524,12 +570,15 @@ $("#confirmLive").onclick = async () => {
   catch (err) { $("#error").textContent = String(err.message || err); $("#error").classList.add("show"); }
 };
 setInterval(() => { $("#clock").textContent = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}); }, 1000);
-setInterval(() => fetch("/api/ping").catch(()=>{}), 60_000);
+setInterval(() => { if (!STATIC) fetch("/api/ping").catch(()=>{}); }, 60_000);
 setInterval(checkForNew, 10 * 60_000);
 
 (async function init(){
   buildRoom(); buildStages(); setControls(false);
+  STATIC = !(await fetch("/api/ping").then(r => r.ok).catch(() => false));
+  if (STATIC){ document.body.classList.add("static"); }
   loadHistory();
+  if (STATIC){ loadLatest(); return; }
   const st = await api("/api/live/status").catch(() => ({running:false}));
   if (st.running) { resetStage(null); goLive(0); }
   else loadLatest();

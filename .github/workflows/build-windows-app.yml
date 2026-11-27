@@ -5,6 +5,7 @@ on:
     paths:
       - "hammor/**"
       - "desktop_app.py"
+      - "web/**"
       - "requirements.txt"
       - ".github/workflows/build-windows-app.yml"
   workflow_dispatch:
@@ -26,11 +27,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt pyinstaller
+      - run: pip install -r requirements.txt pyinstaller pillow
       - name: Build HammorCo.exe
         run: >
           pyinstaller --noconfirm --onefile --windowed --name HammorCo
           --add-data "hammor/desktop/office.html;hammor/desktop"
+          --add-data "web/manifest.webmanifest;web" --add-data "web/icon-192.png;web" --add-data "web/icon-512.png;web"
+          --icon web/icon-512.png
           --hidden-import hammor.main
           --collect-all yfinance --collect-all curl_cffi --collect-all tzdata
           --collect-submodules anthropic
