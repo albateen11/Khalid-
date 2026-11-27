@@ -12,6 +12,9 @@ on:
         type: boolean
         default: true
 
+permissions:
+  contents: write  # to save each meeting in reports/ for the desktop app
+
 jobs:
   report:
     runs-on: ubuntu-latest
@@ -39,6 +42,23 @@ jobs:
           else
             python -m hammor.main --send-at 09:00
           fi
+      - name: Save the meeting for the desktop app
+        if: success()
+        run: |
+          [ -f output/meeting.json ] || exit 0
+          d=$(python -c "import json; print(json.load(open('output/meeting.json'))['date'])")
+          mkdir -p reports
+          cp output/meeting.json "reports/$d.json"
+          cp output/meeting.json reports/latest.json
+          git config user.name "Hammor Co. bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports
+          git commit -m "Morning meeting $d" || exit 0
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && exit 0
+            sleep 5
+          done
+          exit 1
       - uses: actions/upload-artifact@v4
         if: always()
         with:

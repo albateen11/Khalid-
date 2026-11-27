@@ -115,12 +115,15 @@ def _screen_table(df: pd.DataFrame) -> str:
 def _meeting(transcript: list[dict]) -> str:
     if not transcript:
         return ""
-    rounds = {1: "Pitches", 3: "Challenge", 6: "Response", 8: "Decision"}
-    parts = []
-    for i, t in enumerate(transcript, 1):
-        if i in rounds:
+    labels = {"pitches": "Pitches", "challenge": "Challenge", "response": "Response",
+              "decision": "Decision"}
+    parts, last = [], None
+    for t in transcript:
+        rnd = t.get("round")
+        if rnd and rnd != last:
             parts.append(f'<div style="font-size:11px;letter-spacing:1px;text-transform:uppercase;'
-                         f'color:{MUTED};margin:14px 0 6px">{rounds[i]}</div>')
+                         f'color:{MUTED};margin:14px 0 6px">{labels.get(rnd, rnd)}</div>')
+            last = rnd
         m = BY_KEY.get(t["key"])
         color = m.color if m else NAVY
         parts.append(f"""<table role="presentation" width="100%" cellspacing="0" style="margin:0 0 10px">
@@ -159,7 +162,7 @@ def render(date_str: str, out: dict, transcript: list[dict], df: pd.DataFrame, m
     if out.get("avoid"):
         items = "".join(f"<li><b>{e(w['symbol'])}</b> – {e(w['reason'])}</li>" for w in out["avoid"])
         sections.append(_section("Stocks to avoid now", f"<ul style='padding-left:18px'>{items}</ul>"))
-    sections.append(_section("Sharia Compliance Officer – Abdullah", _paras(out["sharia_officer_note"])))
+    sections.append(_section("Sharia Compliance Officer" + (" – Abdullah" if ai_used else ""), _paras(out["sharia_officer_note"])))
     if out.get("risks"):
         items = "".join(f"<li>{e(r)}</li>" for r in out["risks"])
         sections.append(_section("Key risks", f"<ul style='padding-left:18px'>{items}</ul>"))

@@ -2,3 +2,4 @@ anthropic>=0.75
 yfinance>=0.2.54
 pandas>=2.2
 numpy>=1.26
+tzdata>=2024.1

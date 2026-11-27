@@ -193,7 +193,10 @@ def _text(resp) -> str:
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
-def _call(system: str, user: str, *, tools=None, output_config=None, max_tokens=32000):
+def _call(system: str, user: str, *, tools=None, output_config=None, max_tokens=32000,
+          on_stream=None):
+    """One streamed Claude request. on_stream, if given, receives every raw stream event
+    (used by the desktop app to show who is thinking, searching or speaking)."""
     client = _client()
     messages = [{"role": "user", "content": user}]
     kwargs = dict(model=MODEL, max_tokens=max_tokens, betas=BETAS, fallbacks="default",
@@ -204,6 +207,9 @@ def _call(system: str, user: str, *, tools=None, output_config=None, max_tokens=
         kwargs["output_config"] = output_config
     for _ in range(5):  # resume server-tool turns that pause
         with client.beta.messages.stream(**kwargs) as stream:
+            if on_stream:
+                for event in stream:
+                    on_stream(event)
             resp = stream.get_final_message()
         if resp.stop_reason == "pause_turn":
             messages = messages + [{"role": "assistant", "content": resp.content}]
@@ -217,6 +223,29 @@ def _call(system: str, user: str, *, tools=None, output_config=None, max_tokens=
     return resp
 
 
+def _stream_handler(emit, who: str, stream_text: bool = True):
+    """Turn raw stream events into simple status/delta events for the desktop app."""
+    def handle(ev):
+        t = getattr(ev, "type", "")
+        if t == "content_block_start":
+            kind = getattr(ev.content_block, "type", "")
+            status = {"thinking": "thinking", "server_tool_use": "searching",
+                      "web_search_tool_result": "reading",
+                      "text": "speaking" if stream_text else "writing"}.get(kind)
+            if status:
+                emit({"type": "status", "who": who, "status": status})
+        elif t == "content_block_stop":
+            block = getattr(ev, "content_block", None)
+            if getattr(block, "type", "") == "server_tool_use":
+                query = (getattr(block, "input", None) or {}).get("query", "")
+                emit({"type": "status", "who": who, "status": "searching", "detail": query})
+        elif t == "content_block_delta" and stream_text:
+            delta = getattr(ev, "delta", None)
+            if getattr(delta, "type", "") == "text_delta":
+                emit({"type": "delta", "who": who, "text": delta.text})
+    return handle
+
+
 def _system(member: Member) -> str:
     return (f"{FIRM_CONTEXT}\n\nYou are {member.name}, {member.role} at Hammor Co. "
             f"{member.persona}\n\n{MEETING_STYLE}")
@@ -226,12 +255,18 @@ def _transcript_text(transcript: list[dict]) -> str:
     return "\n\n".join(f"{t['name']} ({t['role']}): {t['text']}" for t in transcript)
 
 
+ROUNDS = {"pitches": "Round 1 · Pitches", "challenge": "Round 2 · Challenge",
+          "response": "Round 3 · Response", "decision": "Decision"}
+
+
 class Meeting:
     """Runs the morning meeting turn by turn and keeps the transcript."""
 
-    def __init__(self, df: pd.DataFrame, market: dict, sharia_summary: dict, date: str):
+    def __init__(self, df: pd.DataFrame, market: dict, sharia_summary: dict, date: str,
+                 on_event=None):
         self.df, self.market, self.sharia, self.date = df, market, sharia_summary, date
         self.transcript: list[dict] = []
+        self.emit = on_event or (lambda e: None)
 
     def _data(self, exchange: str | None = None, full: bool = False) -> str:
         compliant = self.df[self.df["sharia_status"] == "Compliant"]
@@ -243,43 +278,56 @@ class Meeting:
             screen=_records(compliant if full else _candidates(self.df, exchange)),
         )
 
-    def speak(self, member: Member, instruction: str, *, exchange=None, tools=None,
+    def _round(self, key: str) -> None:
+        self.emit({"type": "stage", "stage": key, "text": ROUNDS[key]})
+
+    def _turn(self, member: Member, rnd: str, text: str) -> None:
+        self.transcript.append({"key": member.key, "name": member.name,
+                                "role": member.role, "round": rnd, "text": text})
+        self.emit({"type": "turn_end", "who": member.key, "text": text})
+
+    def speak(self, member: Member, instruction: str, rnd: str, *, exchange=None, tools=None,
               effort="medium") -> str:
+        self.emit({"type": "turn_start", "who": member.key, "name": member.name,
+                   "role": member.role, "round": rnd})
         so_far = _transcript_text(self.transcript) or "(You are the first to speak.)"
         user = (f"{self._data(exchange)}\n\nMEETING SO FAR:\n{so_far}\n\n"
                 f"YOUR TURN, {member.name}:\n{instruction}")
         try:
             text = _text(_call(_system(member), user, tools=tools,
-                               output_config={"effort": effort}))
+                               output_config={"effort": effort},
+                               on_stream=_stream_handler(self.emit, member.key)))
         except Exception as e:
             log.exception("%s could not speak", member.name)
             text = f"(Unavailable this morning: {e})"
-        self.transcript.append({"key": member.key, "name": member.name,
-                                "role": member.role, "text": text})
+        self._turn(member, rnd, text)
         return text
 
     def run(self) -> dict:
-        # Round 1 – pitches, with web research
-        self.speak(OMAR, PITCH.format(date=self.date, exchange="ADX"),
+        self._round("pitches")
+        self.speak(OMAR, PITCH.format(date=self.date, exchange="ADX"), "pitches",
                    exchange="ADX", tools=[web_search(5)])
-        self.speak(LAYLA, PITCH.format(date=self.date, exchange="DFM"),
+        self.speak(LAYLA, PITCH.format(date=self.date, exchange="DFM"), "pitches",
                    exchange="DFM", tools=[web_search(5)])
-        # Round 2 – challenge
-        self.speak(YOUSEF, CHALLENGE["risk"], tools=[web_search(3)])
-        self.speak(MARIAM, CHALLENGE["income"], tools=[web_search(3)])
-        self.speak(ABDULLAH, CHALLENGE["sharia"])
-        # Round 3 – rebuttal
-        self.speak(OMAR, REBUTTAL, exchange="ADX")
-        self.speak(LAYLA, REBUTTAL, exchange="DFM")
-        # Decision
+        self._round("challenge")
+        self.speak(YOUSEF, CHALLENGE["risk"], "challenge", tools=[web_search(3)])
+        self.speak(MARIAM, CHALLENGE["income"], "challenge", tools=[web_search(3)])
+        self.speak(ABDULLAH, CHALLENGE["sharia"], "challenge")
+        self._round("response")
+        self.speak(OMAR, REBUTTAL, "response", exchange="ADX")
+        self.speak(LAYLA, REBUTTAL, "response", exchange="DFM")
+
+        self._round("decision")
+        self.emit({"type": "turn_start", "who": SAEED.key, "name": SAEED.name,
+                   "role": SAEED.role, "round": "decision"})
         user = (f"{self._data(full=True)}\n\n"
                 f"{DECISION.format(transcript=_transcript_text(self.transcript))}")
         system = f"{FIRM_CONTEXT}\n\nYou are {SAEED.name}, {SAEED.role} at Hammor Co. {SAEED.persona}"
         resp = _call(system, user, output_config={
-            "effort": "high", "format": {"type": "json_schema", "schema": COMMITTEE_SCHEMA}})
+            "effort": "high", "format": {"type": "json_schema", "schema": COMMITTEE_SCHEMA}},
+            on_stream=_stream_handler(self.emit, SAEED.key, stream_text=False))
         out = json.loads(_text(resp))
-        self.transcript.append({"key": SAEED.key, "name": SAEED.name, "role": SAEED.role,
-                                "text": out.get("closing_remarks", "")})
+        self._turn(SAEED, "decision", out.get("closing_remarks", ""))
         return out
 
 
@@ -330,12 +378,13 @@ def rules_committee(df: pd.DataFrame) -> dict:
     }
 
 
-def run_team(df: pd.DataFrame, market: dict, sharia_summary: dict, date: str) -> tuple[dict, list, bool]:
+def run_team(df: pd.DataFrame, market: dict, sharia_summary: dict, date: str,
+             on_event=None) -> tuple[dict, list, bool]:
     """Returns (decision, meeting_transcript, ai_used)."""
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.warning("ANTHROPIC_API_KEY not set — using the rules-based committee")
         return rules_committee(df), [], False
-    meeting = Meeting(df, market, sharia_summary, date)
+    meeting = Meeting(df, market, sharia_summary, date, on_event)
     try:
         out = meeting.run()
     except Exception:

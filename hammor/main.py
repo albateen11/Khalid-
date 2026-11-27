@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import time
@@ -35,27 +36,67 @@ def sharia_summary(results: dict[str, sharia.ShariaResult]) -> dict:
     }
 
 
-def build(fetch=data.fetch_all) -> tuple[str, str, bytes]:
+def _noop(_event: dict) -> None:
+    pass
+
+
+def run_pipeline(fetch=data.fetch_all, on_event=_noop) -> dict:
+    """Fetch → screen → score → morning meeting. Returns the full meeting record
+    (also what the desktop app replays). on_event receives live progress events."""
     now = datetime.now(UAE)
     date_str = now.strftime("%A, %d %B %Y")
 
     log.info("Fetching %d stocks", len(UNIVERSE))
-    stocks = fetch(UNIVERSE)
+    on_event({"type": "stage", "stage": "data", "text": "Collecting market data"})
+
+    def progress(i, n, company):
+        on_event({"type": "progress", "done": i, "total": n, "text": company.name})
+
+    stocks = fetch(UNIVERSE, progress=progress)
     failed = [s.company.symbol for s in stocks if not s.ok]
     good = [s for s in stocks if s.ok]
     if not good:
         raise RuntimeError("No market data could be fetched for any stock")
 
+    on_event({"type": "stage", "stage": "screen", "text": "Running the Sharia screen and scoring"})
     results = {s.company.symbol: sharia.screen(s) for s in good}
     df = analysis.build_table(good, results)
     market = analysis.market_summary(df)
     summary = sharia_summary(results)
+    on_event({"type": "market", "market": market, "sharia": summary})
 
     log.info("Holding the morning team meeting")
-    out, transcript, ai_used = advisors.run_team(df, market, summary, date_str)
-    html = report.render(date_str, out, transcript, df, market, failed, ai_used)
+    out, transcript, ai_used = advisors.run_team(df, market, summary, date_str, on_event=on_event)
+    record = {
+        "date": now.strftime("%Y-%m-%d"),
+        "date_label": date_str,
+        "generated_at": now.isoformat(timespec="seconds"),
+        "ai_used": ai_used,
+        "decision": out,
+        "transcript": transcript,
+        "market": market,
+        "sharia": summary,
+        "failed": failed,
+        "screen": json.loads(df.to_json(orient="records")),
+        "_df": df,  # not serialised; used to build the email
+    }
+    on_event({"type": "decision", "decision": out, "ai_used": ai_used})
+    return record
+
+
+def meeting_json(record: dict) -> str:
+    return json.dumps({k: v for k, v in record.items() if not k.startswith("_")},
+                      ensure_ascii=False, default=str)
+
+
+def build(fetch=data.fetch_all) -> tuple[str, str, bytes, dict]:
+    record = run_pipeline(fetch)
+    df, out = record["_df"], record["decision"]
+    html = report.render(record["date_label"], out, record["transcript"], df, record["market"],
+                         record["failed"], record["ai_used"])
+    now = datetime.now(UAE)
     subject = f"Hammor Co. Daily Report – {now:%a %d %b %Y} – {out['headline']}"[:180]
-    return subject, html, df.to_csv(index=False).encode()
+    return subject, html, df.to_csv(index=False).encode(), record
 
 
 def wait_until(hhmm: str) -> None:
@@ -80,11 +121,12 @@ def main() -> None:
         log.info("Weekend in the UAE, so no report today")
         return
 
-    subject, html, csv = build()
+    subject, html, csv, record = build()
     outdir = Path(os.environ.get("HAMMOR_OUTPUT", "output"))
     outdir.mkdir(exist_ok=True)
     (outdir / "report.html").write_text(html, encoding="utf-8")
     (outdir / "screen.csv").write_bytes(csv)
+    (outdir / "meeting.json").write_text(meeting_json(record), encoding="utf-8")
     log.info("Report written to %s", outdir / "report.html")
 
     if a.dry_run:

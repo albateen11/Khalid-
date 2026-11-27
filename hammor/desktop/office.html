@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hammor Co. Office</title>
+<style>
+:root{
+  --bg:#0c1726; --bg2:#0f1d31; --panel:#132339; --panel2:#182b45; --line:rgba(255,255,255,.08);
+  --ink:#e9eef5; --muted:#93a3b8; --faint:#5f7088; --gold:#d4af37; --gold2:#f1d27a;
+  --green:#3fbf7f; --red:#e0605a; --amber:#e9b949; --blue:#4aa3df;
+  --c-chief:#d4af37; --c-adx:#4aa3df; --c-dfm:#a678d6; --c-risk:#e0605a; --c-income:#3fbf7f; --c-sharia:#4cc3b3;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:radial-gradient(1200px 700px at 30% -10%,#1b3150 0%,var(--bg) 60%);color:var(--ink);
+  font:14px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;overflow-x:hidden}
+button{font:inherit;cursor:pointer}
+.app{display:grid;grid-template-rows:auto auto auto 1fr;min-height:100vh}
+
+/* header */
+header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line);
+  background:rgba(8,16,28,.55);backdrop-filter:blur(6px);position:sticky;top:0;z-index:20}
+.logo{font-weight:800;letter-spacing:2px;font-size:20px}
+.logo b{color:var(--gold)}
+.sub{color:var(--muted);font-size:12px}
+.spacer{flex:1}
+.badge{font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.badge.live{color:#fff;background:var(--red);border-color:transparent;animation:blink 1.6s infinite}
+@keyframes blink{50%{opacity:.6}}
+.btn{border:1px solid var(--line);background:var(--panel2);color:var(--ink);padding:8px 14px;border-radius:8px}
+.btn:hover{border-color:rgba(255,255,255,.25)}
+.btn.primary{background:var(--gold);color:#1a1408;border-color:transparent;font-weight:600}
+.btn.primary:hover{background:var(--gold2)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+select.btn{appearance:none;padding-right:26px;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 14px) 50%,calc(100% - 9px) 50%;background-size:5px 5px;background-repeat:no-repeat}
+
+/* ticker + stages */
+.ticker{display:flex;gap:28px;padding:8px 22px;font-size:12.5px;color:var(--muted);border-bottom:1px solid var(--line);
+  white-space:nowrap;overflow:hidden}
+.ticker b{color:var(--ink)} .up{color:var(--green)} .down{color:var(--red)}
+.stages{display:flex;align-items:center;gap:8px;padding:12px 22px;flex-wrap:wrap}
+.stage{display:flex;align-items:center;gap:8px;color:var(--faint);font-size:12.5px}
+.stage .dot{width:10px;height:10px;border-radius:50%;background:var(--faint)}
+.stage.done{color:var(--muted)} .stage.done .dot{background:var(--green)}
+.stage.now{color:var(--ink);font-weight:600} .stage.now .dot{background:var(--gold);box-shadow:0 0 0 4px rgba(212,175,55,.25)}
+.stage + .stage::before{content:"";width:26px;height:1px;background:var(--line);margin-right:2px}
+.stagetext{margin-left:auto;color:var(--muted);font-size:12.5px}
+.bar{height:3px;background:var(--line);margin:0 22px;border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .3s}
+
+/* main grid */
+main{display:grid;grid-template-columns:minmax(460px,1.05fr) minmax(380px,1fr);gap:18px;padding:16px 22px 24px}
+.card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:14px}
+.room{position:relative;min-height:600px;padding:12px;display:flex;flex-direction:column}
+.roomhead{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 0;color:var(--muted);font-size:12px;letter-spacing:1px;text-transform:uppercase}
+.floor{position:relative;flex:1;min-height:540px;margin-bottom:8px}
+.table{position:absolute;left:50%;top:50%;width:50%;height:34%;transform:translate(-50%,-50%);border-radius:50%;
+  background:radial-gradient(closest-side,#5a3e22,#3d2914 80%,#2c1d0e);box-shadow:0 18px 40px rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.08);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.table .mono{font-weight:800;color:var(--gold);letter-spacing:3px;font-size:13px;opacity:.9}
+.table .round{font-size:16px;font-weight:600;margin-top:4px}
+.table .papers{font-size:11.5px;color:#d9c9a8;opacity:.75;margin-top:2px}
+
+.seat{position:absolute;width:150px;transform:translate(-50%,-50%);text-align:center;transition:transform .35s}
+.seat.active{transform:translate(-50%,-50%) scale(1.07);z-index:2}
+.avatar{--c:#888;position:relative;width:64px;height:64px;margin:0 auto 6px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--c) 75%,#fff),var(--c));
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:24px;color:#0b1220;
+  box-shadow:0 6px 16px rgba(0,0,0,.4);transition:box-shadow .3s, filter .3s}
+.seat:not(.active) .avatar{filter:saturate(.75) brightness(.9)}
+.seat.active .avatar{box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 45%,transparent),0 0 34px color-mix(in srgb,var(--c) 70%,transparent)}
+.seat.active .avatar::after{content:"";position:absolute;inset:-10px;border-radius:50%;border:2px solid var(--c);opacity:0;animation:pulse 1.6s infinite}
+@keyframes pulse{0%{transform:scale(.85);opacity:.8}100%{transform:scale(1.25);opacity:0}}
+.nm{font-weight:600}
+.rl{color:var(--muted);font-size:11.5px;line-height:1.3}
+.st{margin-top:6px;display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 9px;border-radius:999px;
+  background:rgba(255,255,255,.05);color:var(--muted);max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st.thinking{color:var(--amber)} .st.searching,.st.reading{color:var(--blue)} .st.speaking{color:var(--green)} .st.writing{color:var(--gold2)}
+.st.done{color:var(--faint)}
+.dots i{display:inline-block;width:4px;height:4px;border-radius:50%;background:currentColor;margin:0 1px;animation:dot 1s infinite}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes dot{0%,80%,100%{opacity:.2}40%{opacity:1}}
+.wave i{display:inline-block;width:3px;margin:0 1px;background:currentColor;border-radius:1px;animation:wave .9s infinite ease-in-out}
+.wave i:nth-child(1){height:6px}.wave i:nth-child(2){height:10px;animation-delay:.15s}.wave i:nth-child(3){height:7px;animation-delay:.3s}
+@keyframes wave{50%{transform:scaleY(.4)}}
+
+.controls{display:flex;gap:8px;align-items:center;justify-content:center;padding:6px 0 4px;flex-wrap:wrap}
+.controls .btn{padding:6px 12px;font-size:13px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{background:transparent;border:0;color:var(--muted);padding:6px 10px;font-size:13px}
+.seg button.on{background:var(--panel2);color:var(--ink)}
+
+/* conversation */
+.chat{display:flex;flex-direction:column;max-height:calc(100vh - 210px);min-height:560px}
+.chathead{padding:14px 16px 10px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.chathead h2{margin:0;font-size:15px}
+.feed{flex:1;overflow-y:auto;padding:14px 16px 20px;scroll-behavior:smooth}
+.divider{display:flex;align-items:center;gap:10px;color:var(--faint);font-size:11px;letter-spacing:1.2px;text-transform:uppercase;margin:12px 0 10px}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.msg{display:grid;grid-template-columns:38px 1fr;gap:10px;margin:0 0 14px;animation:rise .35s ease}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}}
+.msg .av{width:34px;height:34px;border-radius:50%;background:var(--c);color:#0b1220;font-weight:700;display:flex;align-items:center;justify-content:center}
+.bubble{background:rgba(255,255,255,.04);border:1px solid var(--line);border-left:3px solid var(--c);border-radius:4px 12px 12px 12px;padding:9px 12px}
+.who{font-size:12.5px;margin-bottom:3px}.who b{color:var(--c)}.who span{color:var(--muted)}
+.text{white-space:pre-wrap;font-size:13.5px;line-height:1.55}
+.typing .text::after{content:"▍";color:var(--c);animation:blink 1s infinite;margin-left:1px}
+.empty{color:var(--muted);text-align:center;padding:60px 24px}
+.empty h3{color:var(--ink);margin:0 0 8px}
+
+/* results */
+.results{grid-column:1 / -1;padding:20px 22px;display:none}
+.results.show{display:block;animation:rise .5s ease}
+.results h2{margin:0 0 4px;font-size:21px}
+.results .overview{color:#c9d4e2;max-width:1000px}
+.cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}
+.col h3{font-size:13px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);margin:0 0 10px}
+.pick{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.pick .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.pick .name{font-weight:600}.pick .sym{color:var(--muted);font-size:12px}
+.act{font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--green);color:#06210f;white-space:nowrap}
+.act.Hold{background:var(--amber);color:#2b1d00}.act.Watch{background:#7b8ba1;color:#0b1220}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0;font-size:12px}
+.kv div{background:rgba(0,0,0,.18);border-radius:8px;padding:6px 8px}.kv span{display:block;color:var(--muted);font-size:11px}
+.pick p{margin:6px 0;font-size:13px;color:#d3dce8}
+.pick .tv{font-style:italic;color:var(--muted)}
+.pick .risk{font-size:12px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px}
+.box{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.box h4{margin:0 0 6px;font-size:13px;color:var(--gold)}
+.box ul{margin:0;padding-left:18px}.box li{margin:3px 0}
+.disclaimer{color:var(--faint);font-size:11.5px;margin-top:16px}
+
+/* modal + toast */
+.modal{position:fixed;inset:0;background:rgba(3,8,15,.65);display:none;align-items:center;justify-content:center;z-index:50}
+.modal.show{display:flex}
+.dialog{width:min(520px,92vw);background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+.dialog h3{margin:0 0 8px}
+.dialog label{display:block;font-size:12.5px;color:var(--muted);margin:12px 0 4px}
+.dialog input{width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--bg2);color:var(--ink);font:inherit}
+.dialog .hint{font-size:12px;color:var(--faint);margin-top:4px}
+.dialog .row{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.toast{position:fixed;right:22px;bottom:22px;background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--gold);
+  border-radius:10px;padding:12px 14px;display:none;gap:12px;align-items:center;z-index:40;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.toast.show{display:flex}
+.error{background:rgba(224,96,90,.12);border:1px solid rgba(224,96,90,.4);color:#ffd2cf;border-radius:10px;padding:10px 14px;margin:0 22px;display:none}
+.error.show{display:block}
+
+@media (max-width:1050px){main{grid-template-columns:1fr}.chat{max-height:none}.cols{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <div class="logo">HAMMOR <b>CO.</b></div>
+      <div class="sub">Sharia-compliant research · ADX &amp; DFM</div>
+    </div>
+    <span class="badge" id="source">Loading…</span>
+    <div class="spacer"></div>
+    <select class="btn" id="history" title="Previous meetings"><option value="">Previous meetings</option></select>
+    <button class="btn" id="replayBtn">▶ Replay this morning</button>
+    <button class="btn primary" id="liveBtn">● Start live meeting</button>
+    <button class="btn" id="settingsBtn" title="Settings">⚙</button>
+  </header>
+  <div class="ticker" id="ticker"><span>Market data appears here once a meeting is loaded.</span></div>
+  <div>
+    <div class="stages" id="stages"></div>
+    <div class="bar"><i id="bar"></i></div>
+  </div>
+  <div class="error" id="error"></div>
+  <main>
+    <section class="card room">
+      <div class="roomhead"><span>Meeting room</span><span id="clock"></span></div>
+      <div class="floor" id="floor">
+        <div class="table"><div class="mono">HAMMOR CO.</div><div class="round" id="tableRound">Waiting</div><div class="papers" id="tableNote">The team is at their desks</div></div>
+      </div>
+      <div class="controls" id="controls">
+        <button class="btn" id="pauseBtn">⏸ Pause</button>
+        <div class="seg" id="speed"><button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="4">4×</button></div>
+        <button class="btn" id="skipBtn">⏭ Skip to decision</button>
+      </div>
+    </section>
+    <section class="card chat">
+      <div class="chathead"><h2>Conversation</h2><span class="sub" id="dateLabel"></span></div>
+      <div class="feed" id="feed"><div class="empty"><h3>Welcome to the office</h3>Loading this morning's meeting…</div></div>
+    </section>
+    <section class="card results" id="results"></section>
+  </main>
+</div>
+
+<div class="modal" id="settingsModal">
+  <div class="dialog">
+    <h3>Settings</h3>
+    <label>Claude API key (needed for live meetings)</label>
+    <input id="sKey" type="password" placeholder="sk-ant-…  (leave empty to keep the current key)" autocomplete="off">
+    <div class="hint" id="sKeyHint"></div>
+    <label>GitHub token (only if your repository is private)</label>
+    <input id="sTok" type="password" placeholder="leave empty if the repository is public" autocomplete="off">
+    <label>Repository</label><input id="sRepo">
+    <label>Branch</label><input id="sBranch">
+    <div class="hint">Keys are saved only on this computer, in %APPDATA%\HammorCo\settings.json.</div>
+    <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="saveSettings">Save</button></div>
+  </div>
+</div>
+<div class="modal" id="liveModal">
+  <div class="dialog">
+    <h3>Start a live meeting?</h3>
+    <p>The team will collect fresh market data (about 2–3 minutes), then meet and debate in front of you (about 5–10 minutes).</p>
+    <p class="sub">This uses your Claude API key and costs about US$1–2. The 9:00 email from GitHub is not affected.</p>
+    <div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="confirmLive">Start meeting</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"><span id="toastText"></span><button class="btn primary" id="toastBtn">Watch</button></div>
+
+<script>
+"use strict";
+const TEAM = [
+  {key:"chief", name:"Saeed", role:"Chief Investment Advisor", x:50, y:13},
+  {key:"adx", name:"Omar", role:"ADX Equity Analyst", x:14, y:34},
+  {key:"dfm", name:"Layla", role:"DFM Equity Analyst", x:86, y:34},
+  {key:"risk", name:"Yousef", role:"Risk Manager", x:14, y:70},
+  {key:"income", name:"Mariam", role:"Dividend & Income Specialist", x:50, y:86},
+  {key:"sharia", name:"Abdullah", role:"Sharia Compliance Officer", x:86, y:70},
+];
+const BY = Object.fromEntries(TEAM.map(m => [m.key, m]));
+const STAGES = [["data","Market data"],["pitches","Pitches"],["challenge","Challenge"],["response","Response"],["decision","Decision"]];
+const ROUND_LABEL = {pitches:"Round 1 · Pitches", challenge:"Round 2 · Challenge", response:"Round 3 · Response", decision:"Decision"};
+const LEGACY_ROUNDS = ["pitches","pitches","challenge","challenge","challenge","response","response","decision"];
+const RESEARCHERS = new Set(["adx","dfm","risk","income"]);
+const $ = s => document.querySelector(s);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+let current = null;        // record being shown
+let mode = "idle";         // idle | replay | live
+let liveSource = null;
+
+/* ---------------- room + stages ---------------- */
+function buildRoom(){
+  const floor = $("#floor");
+  floor.querySelectorAll(".seat").forEach(n => n.remove());
+  for (const m of TEAM){
+    const s = el("div","seat"); s.dataset.who = m.key; s.style.left = m.x+"%"; s.style.top = m.y+"%";
+    const av = el("div","avatar", m.name[0]); av.style.setProperty("--c", `var(--c-${m.key})`);
+    s.append(av, el("div","nm", m.name), el("div","rl", m.role));
+    const st = el("div","st","At desk"); s.append(st);
+    floor.append(s);
+  }
+}
+function setStatus(who, status, detail){
+  const seat = document.querySelector(`.seat[data-who="${who}"]`); if (!seat) return;
+  const st = seat.querySelector(".st"); st.className = "st " + (status||"");
+  const labels = {thinking:"Thinking", searching:"Searching the news", reading:"Reading results", speaking:"Speaking",
+                  writing:"Writing the decision", listening:"Listening", ready:"Getting ready", done:"Done", desk:"At desk", data:"Reviewing data"};
+  st.textContent = "";
+  if (status === "speaking"){ const w = el("span","wave"); w.append(el("i"),el("i"),el("i")); st.append(w); }
+  else if (["thinking","searching","reading","writing","ready","data"].includes(status)){ const d = el("span","dots"); d.append(el("i"),el("i"),el("i")); st.append(d); }
+  st.append(document.createTextNode(" " + (detail ? `${labels[status]||status}: “${detail}”` : (labels[status]||status))));
+  st.title = st.textContent.trim();
+}
+function setActive(who){
+  document.querySelectorAll(".seat").forEach(s => s.classList.toggle("active", s.dataset.who === who));
+  for (const m of TEAM) if (m.key !== who){
+    const st = document.querySelector(`.seat[data-who="${m.key}"] .st`);
+    if (st && !st.classList.contains("done")) setStatus(m.key, who ? "listening" : "desk");
+  }
+}
+function buildStages(){
+  const box = $("#stages"); box.textContent = "";
+  for (const [k, label] of STAGES){ const s = el("div","stage"); s.dataset.k = k; s.append(el("span","dot"), el("span","",label)); box.append(s); }
+  box.append(el("div","stagetext")); box.lastChild.id = "stageText";
+}
+function setStage(key, text){
+  if (key === "screen") key = "data";
+  const idx = STAGES.findIndex(s => s[0] === key);
+  document.querySelectorAll(".stage").forEach((s,i) => { s.classList.toggle("done", idx >= 0 && i < idx); s.classList.toggle("now", i === idx); });
+  if (key === "complete") document.querySelectorAll(".stage").forEach(s => { s.classList.add("done"); s.classList.remove("now"); });
+  $("#bar").style.width = idx >= 0 ? ((idx) / STAGES.length * 100) + "%" : (key === "complete" ? "100%" : "0");
+  $("#stageText").textContent = text || "";
+  if (ROUND_LABEL[key]) { $("#tableRound").textContent = ROUND_LABEL[key]; }
+  else if (key === "data") { $("#tableRound").textContent = "Preparing"; }
+  else if (key === "complete") { $("#tableRound").textContent = "Meeting closed"; }
+}
+
+/* ---------------- ticker ---------------- */
+function pct(v, signed=true){ if (v == null || isNaN(v)) return "–"; const s = (v*100).toFixed(1)+"%"; return signed && v > 0 ? "+"+s : s; }
+function pctSpan(v){ const s = el("span", v > 0 ? "up" : v < 0 ? "down" : "", pct(v)); return s; }
+function renderTicker(market){
+  const t = $("#ticker"); t.textContent = "";
+  if (!market || !Object.keys(market).length){ t.append(el("span","","No market snapshot")); return; }
+  for (const [ex, m] of Object.entries(market)){
+    const a = el("span"); a.append(el("b","",ex+" "), pctSpan(m.avg_change_1d), document.createTextNode(` · ▲${m.advancers} ▼${m.decliners}`)); t.append(a);
+    for (const g of (m.top_gainers||[]).slice(0,3)){ const s = el("span"); s.append(document.createTextNode(g.name+" "), pctSpan(g.chg_1d)); t.append(s); }
+  }
+}
+
+/* ---------------- conversation ---------------- */
+let lastRound = null;
+const openMsgs = {};
+function clearFeed(){ $("#feed").textContent = ""; lastRound = null; for (const k in openMsgs) delete openMsgs[k]; }
+function addDivider(round){
+  if (round === lastRound) return; lastRound = round;
+  $("#feed").append(el("div","divider", ROUND_LABEL[round] || round));
+}
+function startMsg(who, round){
+  const m = BY[who]; addDivider(round);
+  const box = el("div","msg typing"); box.style.setProperty("--c", `var(--c-${who})`);
+  const bubble = el("div","bubble"); const head = el("div","who"); head.append(el("b","",m.name), el("span",""," · "+m.role));
+  const text = el("div","text"); bubble.append(head, text); box.append(el("div","av", m.name[0]), bubble);
+  $("#feed").append(box); openMsgs[who] = text; scrollFeed(); return text;
+}
+function endMsg(who){ const t = openMsgs[who]; if (t) t.closest(".msg").classList.remove("typing"); delete openMsgs[who]; }
+function scrollFeed(){ const f = $("#feed"); if (f.scrollHeight - f.scrollTop - f.clientHeight < 220) f.scrollTop = f.scrollHeight; }
+function emptyFeed(title, body){ clearFeed(); const d = el("div","empty"); d.append(el("h3","",title), el("div","",body)); $("#feed").append(d); }
+
+/* ---------------- results ---------------- */
+function money(v){ return v == null || isNaN(v) ? "–" : Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function renderResults(rec){
+  const box = $("#results"); box.textContent = "";
+  const d = rec.decision; if (!d) return;
+  const prices = Object.fromEntries((rec.screen||[]).map(r => [r.symbol, r]));
+  box.append(el("div","sub", (rec.date_label||rec.date||"") + (rec.ai_used ? " · Decision by Saeed after the team meeting" : " · Quantitative screen only")));
+  box.append(el("h2","", d.headline), el("p","overview", d.market_overview));
+  const cols = el("div","cols");
+  for (const [k, title] of [["long_term","Long-term · 1+ years"],["medium_term","Growth · 3–12 months"],["income","Income · dividends"]]){
+    const col = el("div","col"); col.append(el("h3","",title));
+    const picks = (d.picks||{})[k] || [];
+    if (!picks.length) col.append(el("p","sub","No pick met the bar today."));
+    for (const p of picks){
+      const row = prices[p.symbol] || {}; const price = row.price; const up = price ? p.target_price/price - 1 : null;
+      const c = el("div","pick");
+      const top = el("div","top"); const nm = el("div"); nm.append(el("div","name",p.name), el("div","sym",`${p.symbol} · ${p.exchange} · ${p.conviction} conviction`));
+      top.append(nm, el("span","act "+p.action, p.action)); c.append(top);
+      const kv = el("div","kv");
+      for (const [lab,val] of [["Price (AED)",money(price)],["Entry zone",p.entry_zone],["Target",money(p.target_price)+" ("+pct(up)+")"]]){ const x = el("div"); x.append(el("span","",lab), document.createTextNode(val)); kv.append(x); }
+      c.append(kv, el("p","",p.rationale));
+      if (p.team_view) c.append(el("p","tv","Team view: "+p.team_view));
+      let risk = "Key risk: "+p.key_risk;
+      if (row.purification_pct > 0) risk += ` · Purify ~${(row.purification_pct*100).toFixed(2)}% of dividends`;
+      c.append(el("p","risk",risk)); col.append(c);
+    }
+    cols.append(col);
+  }
+  box.append(cols);
+  const g = el("div","grid2");
+  const list = (title, items, fmt) => { const b = el("div","box"); b.append(el("h4","",title)); const ul = el("ul"); for (const i of items) ul.append(el("li","",fmt(i))); if (!items.length) ul.append(el("li","","None today")); b.append(ul); return b; };
+  g.append(list("Watchlist", d.watchlist||[], w => `${w.symbol} – ${w.reason}`), list("Avoid for now", d.avoid||[], w => `${w.symbol} – ${w.reason}`));
+  const sh = el("div","box"); sh.append(el("h4","","Abdullah · Sharia Compliance Officer"), el("p","",d.sharia_officer_note)); g.append(sh);
+  g.append(list("Key risks (Yousef)", d.risks||[], r => r));
+  box.append(g);
+  box.append(el("p","disclaimer","For your personal information only, not advice from an SCA-licensed adviser. Data comes from free, delayed sources. Check prices and Sharia status with a qualified scholar or the company's Sharia board before investing."));
+  box.classList.add("show");
+}
+
+/* ---------------- replay engine ---------------- */
+const player = {speed:1, paused:false, skip:false, token:0};
+class Abort extends Error {}
+async function wait(ms){
+  const tok = player.token;
+  while (ms > 0){
+    if (tok !== player.token) throw new Abort();
+    if (player.skip) return;
+    await new Promise(r => setTimeout(r, 40));
+    if (!player.paused) ms -= 40 * player.speed;
+  }
+}
+async function typeInto(node, text){
+  const step = 3;
+  for (let i = 0; i < text.length; i += step){
+    if (player.skip){ node.textContent = text; return; }
+    node.textContent = text.slice(0, i + step); scrollFeed();
+    await wait(55);
+  }
+  node.textContent = text;
+}
+function resetStage(rec){
+  buildRoom(); clearFeed(); $("#results").classList.remove("show"); $("#error").classList.remove("show");
+  renderTicker(rec ? rec.market : null);
+  $("#dateLabel").textContent = rec ? (rec.date_label || rec.date) : "";
+  $("#tableNote").textContent = "The team is at their desks";
+  setStage("", "");
+}
+async function replay(rec){
+  stopLive(); player.token++; player.skip = false; player.paused = false; $("#pauseBtn").textContent = "⏸ Pause";
+  current = rec; mode = "replay"; setControls(true);
+  const tok = player.token;
+  const label = rec._source === "live" ? "Live meeting (saved)" : rec._source === "local" ? "Saved meeting" : "This morning's meeting";
+  $("#source").textContent = `${label} · ${rec.date}`; $("#source").className = "badge";
+  resetStage(rec);
+  try {
+    setStage("data", "Market data collected and Sharia screen complete");
+    TEAM.forEach(m => setStatus(m.key, "data"));
+    await wait(1500);
+    const turns = rec.transcript || [];
+    if (!turns.length){ emptyFeed("No meeting transcript", "The team didn't meet on this day (no AI key was set), so only the quantitative picks are shown below."); }
+    for (let i = 0; i < turns.length; i++){
+      const t = turns[i]; const round = t.round || LEGACY_ROUNDS[i] || "decision";
+      setStage(round, `${BY[t.key]?.name || t.name} has the floor`);
+      setActive(t.key); $("#tableNote").textContent = `${t.name} · ${t.role}`;
+      if (t.key === "chief"){ setStatus(t.key, "writing"); await wait(2200); }
+      else {
+        setStatus(t.key, "thinking"); await wait(1100);
+        if (RESEARCHERS.has(t.key) && (round === "pitches" || round === "challenge")){ setStatus(t.key, "searching"); await wait(1600); }
+      }
+      setStatus(t.key, "speaking");
+      const node = startMsg(t.key, round);
+      await typeInto(node, t.text || "");
+      endMsg(t.key); setStatus(t.key, "done"); await wait(600);
+    }
+    if (tok !== player.token) return;
+    setActive(null); TEAM.forEach(m => setStatus(m.key, "done"));
+    setStage("complete", "Meeting closed · decision below"); $("#tableNote").textContent = "See the decision below";
+    renderResults(rec);
+    if (player.skip) $("#results").scrollIntoView({behavior:"smooth"});
+  } catch (e) { if (!(e instanceof Abort)) throw e; }
+  finally { if (tok === player.token){ mode = "idle"; setControls(false); } }
+}
+function setControls(on){ $("#controls").style.visibility = on ? "visible" : "hidden"; }
+
+/* ---------------- live engine ---------------- */
+function stopLive(){ if (liveSource){ liveSource.close(); liveSource = null; } }
+function goLive(from=0){
+  player.token++; stopLive(); mode = "live"; setControls(false);
+  $("#source").textContent = "LIVE"; $("#source").className = "badge live";
+  if (from === 0){ resetStage(null); emptyFeed("The team is gathering", "Collecting fresh market data from ADX and DFM…"); }
+  $("#liveBtn").disabled = true;
+  liveSource = new EventSource(`/api/live/events?from=${from}`);
+  liveSource.onmessage = ev => handleLive(JSON.parse(ev.data));
+  liveSource.onerror = () => { if (mode !== "live") stopLive(); };
+}
+let feedPrimed = false;
+function handleLive(e){
+  switch (e.type){
+    case "begin": feedPrimed = false; TEAM.forEach(m => setStatus(m.key, "data")); break;
+    case "stage":
+      if (e.stage === "data" || e.stage === "screen") setStage("data", e.text);
+      else setStage(e.stage, e.text);
+      break;
+    case "progress":
+      $("#stageText").textContent = `Collecting market data ${e.done}/${e.total} · ${e.text}`;
+      $("#bar").style.width = (e.done / e.total * 100 / STAGES.length) + "%"; break;
+    case "market": renderTicker(e.market); $("#dateLabel").textContent = new Date().toDateString(); break;
+    case "turn_start":
+      if (!feedPrimed){ clearFeed(); feedPrimed = true; }
+      if (e.round) setStage(e.round, `${e.name} has the floor`);
+      setActive(e.who); setStatus(e.who, "ready"); $("#tableNote").textContent = `${e.name} · ${e.role}`;
+      if (e.who !== "chief") startMsg(e.who, e.round); else addDivider("decision");
+      break;
+    case "status": setStatus(e.who, e.status, e.detail); break;
+    case "delta": { const n = openMsgs[e.who]; if (n){ n.textContent += e.text; scrollFeed(); } break; }
+    case "turn_end":
+      if (e.who === "chief"){ const n = startMsg("chief","decision"); setStatus("chief","speaking"); player.skip = false; player.speed = 1;
+        typeInto(n, e.text).catch(()=>{}).finally(() => { endMsg("chief"); setStatus("chief","done"); }); }
+      else { const n = openMsgs[e.who]; if (n) n.textContent = e.text; endMsg(e.who); setStatus(e.who, "done"); }
+      break;
+    case "done":
+      current = e.record; mode = "idle"; stopLive(); setActive(null);
+      setStage("complete","Meeting closed · decision below"); $("#tableNote").textContent = "See the decision below";
+      $("#source").textContent = `Live meeting · ${e.record.date}`; $("#source").className = "badge";
+      renderResults(e.record); $("#liveBtn").disabled = false; loadHistory(); break;
+    case "error":
+      mode = "idle"; stopLive(); $("#liveBtn").disabled = false;
+      $("#error").textContent = "The live meeting stopped: " + e.text; $("#error").classList.add("show"); break;
+  }
+}
+
+/* ---------------- data loading ---------------- */
+async function api(path, opts){ const r = await fetch(path, opts); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; }
+async function loadLatest(date){
+  try {
+    const {record} = await api("/api/latest" + (date ? `?date=${date}` : ""));
+    if (!record){ $("#source").textContent = "No meeting yet"; resetStage(null);
+      emptyFeed("No meeting saved yet", "GitHub holds the meeting every weekday at 9:00 UAE time, and it will appear here automatically. You can also press “Start live meeting” to watch the team now.");
+      return null; }
+    replay(record); return record;
+  } catch (err) { emptyFeed("Couldn't load the meeting", String(err)); return null; }
+}
+async function loadHistory(){
+  try {
+    const {dates} = await api("/api/history"); const sel = $("#history");
+    sel.length = 1; for (const d of dates) sel.append(new Option(d, d));
+  } catch (_) {}
+}
+async function checkForNew(){
+  if (mode !== "idle") return;
+  try {
+    const {record} = await api("/api/latest");
+    if (record && (!current || record.date > current.date || (record.generated_at||"") > (current.generated_at||""))){
+      if (current && current._source === record._source && record.generated_at === current.generated_at) return;
+      $("#toastText").textContent = `A new meeting from ${record.date} is ready.`;
+      $("#toast").classList.add("show"); $("#toastBtn").onclick = () => { $("#toast").classList.remove("show"); replay(record); };
+    }
+  } catch (_) {}
+}
+
+/* ---------------- wiring ---------------- */
+$("#replayBtn").onclick = () => current && current.transcript ? replay(current) : loadLatest();
+$("#pauseBtn").onclick = () => { player.paused = !player.paused; $("#pauseBtn").textContent = player.paused ? "▶ Resume" : "⏸ Pause"; };
+$("#skipBtn").onclick = () => { player.skip = true; };
+$("#speed").onclick = ev => { const b = ev.target.closest("button"); if (!b) return; player.speed = +b.dataset.s; $("#speed").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); };
+$("#history").onchange = ev => { if (ev.target.value) loadLatest(ev.target.value); ev.target.value = ""; };
+document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => b.closest(".modal").classList.remove("show"));
+$("#settingsBtn").onclick = async () => {
+  const s = await api("/api/settings");
+  $("#sKey").value = ""; $("#sTok").value = ""; $("#sRepo").value = s.repo; $("#sBranch").value = s.branch;
+  $("#sKeyHint").textContent = s.has_anthropic_key ? "✓ A key is saved." : "No key saved yet. Create one at console.anthropic.com.";
+  $("#settingsModal").classList.add("show");
+};
+$("#saveSettings").onclick = async () => {
+  await api("/api/settings", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({anthropic_key:$("#sKey").value, github_token:$("#sTok").value, repo:$("#sRepo").value, branch:$("#sBranch").value})});
+  $("#settingsModal").classList.remove("show"); loadHistory();
+};
+$("#liveBtn").onclick = async () => {
+  const s = await api("/api/settings");
+  if (!s.has_anthropic_key){ $("#settingsBtn").click(); return; }
+  $("#liveModal").classList.add("show");
+};
+$("#confirmLive").onclick = async () => {
+  $("#liveModal").classList.remove("show");
+  try { await api("/api/live/start", {method:"POST"}); goLive(0); }
+  catch (err) { $("#error").textContent = String(err.message || err); $("#error").classList.add("show"); }
+};
+setInterval(() => { $("#clock").textContent = new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}); }, 1000);
+setInterval(() => fetch("/api/ping").catch(()=>{}), 60_000);
+setInterval(checkForNew, 10 * 60_000);
+
+(async function init(){
+  buildRoom(); buildStages(); setControls(false);
+  loadHistory();
+  const st = await api("/api/live/status").catch(() => ({running:false}));
+  if (st.running) { resetStage(null); goLive(0); }
+  else loadLatest();
+})();
+</script>
+</body>
+</html>

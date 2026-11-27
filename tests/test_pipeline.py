@@ -25,7 +25,7 @@ def fake_stock(company: Company, seed: int, **info) -> StockData:
     return StockData(company, hist, base, interest_income=1e7, total_revenue=1e9)
 
 
-def fake_fetch(companies):
+def fake_fetch(companies, progress=None):
     return [fake_stock(c, i) for i, c in enumerate(companies)]
 
 
@@ -56,7 +56,8 @@ def test_universe_symbols_unique():
 
 def test_full_pipeline_rules_mode(monkeypatch, tmp_path):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    subject, html, csv = main.build(fetch=fake_fetch)
+    subject, html, csv, record = main.build(fetch=fake_fetch)
+    assert '"transcript"' in main.meeting_json(record)
     assert "Hammor Co." in subject
     assert "Long-term opportunities" in html and "Income and dividends" in html
     # Excluded companies (conventional banks) must never be recommended.
@@ -111,6 +112,9 @@ class _FakeClient:
             def __exit__(self_inner, *a):
                 return False
 
+            def __iter__(self_inner):
+                return iter([])
+
             def get_final_message(self_inner):
                 return resp
         return _Ctx()
@@ -143,3 +147,12 @@ def test_meeting_runs_in_order_and_guards_sharia(monkeypatch):
     from hammor import report
     html = report.render("today", out, transcript, df, market, [], ai)
     assert "team meeting" in html and "Meet the Hammor Co. team" in html
+
+
+def test_desktop_selftest(monkeypatch, tmp_path):
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    from hammor.desktop import server
+    assert server.selftest() == 0
+    server.save_settings({"anthropic_key": "sk-test"})
+    assert server.public_settings()["has_anthropic_key"]
+    assert "sk-test" not in json.dumps(server.public_settings())

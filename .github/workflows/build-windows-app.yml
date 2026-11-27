@@ -1,0 +1,61 @@
+name: Build Windows desktop app
+
+on:
+  push:
+    paths:
+      - "hammor/**"
+      - "desktop_app.py"
+      - "requirements.txt"
+      - ".github/workflows/build-windows-app.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # to publish the .exe as a release
+
+concurrency:
+  group: windows-app
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt pyinstaller
+      - name: Build HammorCo.exe
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name HammorCo
+          --add-data "hammor/desktop/office.html;hammor/desktop"
+          --hidden-import hammor.main
+          --collect-all yfinance --collect-all curl_cffi --collect-all tzdata
+          --collect-submodules anthropic
+          desktop_app.py
+      - name: Self-test the .exe
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\HammorCo.exe -ArgumentList "--selftest" -Wait -PassThru
+          if ($p.ExitCode -ne 0) {
+            Get-Content "$env:APPDATA\HammorCo\hammor.log" -ErrorAction SilentlyContinue
+            exit 1
+          }
+          Write-Output "Self-test passed"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HammorCo-windows
+          path: dist/HammorCo.exe
+      - name: Publish as the "desktop-latest" release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete desktop-latest --yes --cleanup-tag || true
+          gh release create desktop-latest dist/HammorCo.exe \
+            --target "${GITHUB_SHA}" \
+            --title "Hammor Co. desktop app (Windows)" \
+            --notes "Download HammorCo.exe and double-click it. Windows may show 'Windows protected your PC' because the app isn't code-signed. Click 'More info', then 'Run anyway'. Built from ${GITHUB_SHA::7}."

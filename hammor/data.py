@@ -65,5 +65,10 @@ def fetch_one(company: Company, retries: int = 2) -> StockData:
     return StockData(company, pd.DataFrame(), error=str(last_err))
 
 
-def fetch_all(companies: list[Company]) -> list[StockData]:
-    return [fetch_one(c) for c in companies]
+def fetch_all(companies: list[Company], progress=None) -> list[StockData]:
+    out = []
+    for i, c in enumerate(companies, 1):
+        out.append(fetch_one(c))
+        if progress:
+            progress(i, len(companies), c)
+    return out

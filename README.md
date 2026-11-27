@@ -76,13 +76,34 @@ After that it runs on its own every weekday. The job starts at 08:15, builds the
 > GitHub only runs scheduled jobs from the repository's **default branch**, and it pauses them
 > after 60 days with no activity in the repository. If that happens, re-enable the job from the Actions tab.
 
+## Desktop app: watch the team at work (Windows)
+
+The **Hammor Co. office** opens a window with the six team members around a meeting table:
+- **Replay:** every weekday, after the 9:00 email, GitHub saves the morning meeting in `reports/`.
+  When you open the app, it replays that meeting: each person "thinks", "searches the news", and speaks
+  in turn while the conversation types out. You can pause it, speed it up (2× or 4×), or skip to the decision.
+- **Live meeting:** press **● Start live meeting** to watch the team collect fresh data and debate in real time,
+  word by word. This needs your Claude API key in ⚙ Settings and costs about US$1–2 each time.
+- **Previous meetings:** choose any earlier day from the drop-down list.
+- While the app is open, it checks every 10 minutes for a new morning meeting and tells you when one is ready.
+
+**Install:** download **HammorCo.exe** from the repository's
+[Releases page](../../releases/tag/desktop-latest) and double-click it.
+Windows may say *"Windows protected your PC"* because the app isn't code-signed: click **More info → Run anyway**.
+GitHub rebuilds the app automatically whenever the code changes.
+
+Your keys are saved only on your computer, in `%APPDATA%\HammorCo\settings.json`.
+The app closes itself about 15 minutes after you close its window.
+
+*Developers:* `python -m hammor.desktop` runs the same app from source.
+
 ## Customising
 
 - **Add or remove stocks:** edit `hammor/universe.py`. Each company has a business-activity
   classification (`ok`, `islamic_fin`, `review`, `excluded`); review these yourself.
 - **Scoring weights:** `hammor/analysis.py`
 - **Sharia thresholds:** `hammor/sharia.py`
-- **Team personalities:** `hammor/team.py`
+- **Team personalities:** `hammor/team.py` (the desktop app's seat colours are in `hammor/desktop/office.html`)
 - **Meeting agenda and instructions:** `hammor/advisors.py`
 - **Send time:** the `cron` line in `.github/workflows/daily-report.yml` and `--send-at`
 
