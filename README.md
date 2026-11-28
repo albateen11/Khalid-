@@ -49,6 +49,23 @@ A safety rule in the code drops any pick that didn't pass our own Sharia screen,
 Companies with mixed activities (conglomerates, supermarkets, exchange houses) are marked
 **"Needs Sharia review"** and are never recommended until you or a scholar confirm them.
 
+### Team memory and track record
+
+Hammor Co. is your own virtual company, and the team remembers its advice. Every meeting is saved in `reports/`.
+Each morning, before new ideas:
+1. The team measures every stock it recommended in the last 90 days against today's price: return since the
+   recommendation, whether the target was reached, and how it compares with the average Sharia-compliant stock.
+   A pick that is down 8% or more is marked **Under review**.
+2. **Saeed opens the meeting by reviewing the record.** He says what worked, what didn't, and the lesson for today.
+3. The rest of the meeting builds on it, and your advice follows up on earlier picks: which to keep holding,
+   where to consider taking profit, and which to exit.
+
+The email, the desktop app and the phone page show the scorecard under **Our track record**.
+
+**Your name:** to have the team call you by name, add a repository **variable** (not a secret) named `CLIENT_NAME`
+under **Settings → Secrets and variables → Actions → Variables**. Your name will then also appear in the saved meetings,
+which are public if the repository is public.
+
 ## One-time setup (about 10 minutes)
 
 ### 1. Gmail App Password

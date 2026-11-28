@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import advisors, analysis, data, emailer, report, sharia
+from . import advisors, analysis, data, emailer, report, sharia, track
 from .universe import UNIVERSE
 
 UAE = ZoneInfo("Asia/Dubai")
@@ -66,7 +66,12 @@ def run_pipeline(fetch=data.fetch_all, on_event=_noop) -> dict:
     on_event({"type": "market", "market": market, "sharia": summary})
 
     log.info("Holding the morning team meeting")
-    out, transcript, ai_used = advisors.run_team(df, market, summary, date_str, on_event=on_event)
+    history = track.load_meetings(os.environ.get("HAMMOR_REPORTS", "reports"), today=now.date())
+    record_track = track.build_track_record(history, df, today=now.date())
+    log.info("Track record: %d recommendations from %d earlier meetings",
+             record_track["count"], record_track["meetings_reviewed"])
+    out, transcript, ai_used = advisors.run_team(df, market, summary, date_str, on_event=on_event,
+                                                 track=record_track)
     record = {
         "date": now.strftime("%Y-%m-%d"),
         "date_label": date_str,
@@ -77,6 +82,8 @@ def run_pipeline(fetch=data.fetch_all, on_event=_noop) -> dict:
         "market": market,
         "sharia": summary,
         "failed": failed,
+        "track": record_track,
+        "client_name": advisors.CLIENT_NAME,
         "screen": json.loads(df.to_json(orient="records")),
         "_df": df,  # not serialised; used to build the email
     }
@@ -93,7 +100,7 @@ def build(fetch=data.fetch_all) -> tuple[str, str, bytes, dict]:
     record = run_pipeline(fetch)
     df, out = record["_df"], record["decision"]
     html = report.render(record["date_label"], out, record["transcript"], df, record["market"],
-                         record["failed"], record["ai_used"])
+                         record["failed"], record["ai_used"], record["track"], record["client_name"])
     now = datetime.now(UAE)
     subject = f"Hammor Co. Daily Report – {now:%a %d %b %Y} – {out['headline']}"[:180]
     return subject, html, df.to_csv(index=False).encode(), record

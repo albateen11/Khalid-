@@ -115,7 +115,7 @@ def _screen_table(df: pd.DataFrame) -> str:
 def _meeting(transcript: list[dict]) -> str:
     if not transcript:
         return ""
-    labels = {"pitches": "Pitches", "challenge": "Challenge", "response": "Response",
+    labels = {"review": "Track record", "pitches": "Pitches", "challenge": "Challenge", "response": "Response",
               "decision": "Decision"}
     parts, last = [], None
     for t in transcript:
@@ -148,18 +148,46 @@ def _roster() -> str:
             f'<tr>{cells}</tr></table>')
 
 
+def _track_block(track: dict | None, review: str) -> str:
+    if not track or not track.get("count"):
+        msg = ("The team keeps a record of every recommendation it makes. From the next meeting on, "
+               "this section shows how each one has performed since it was made.")
+        return _section("Our track record", f'<p style="color:{MUTED}">{e(msg)}</p>')
+    t = track
+    bench = (f" vs {pct(t['avg_benchmark'])} for the average Sharia-compliant stock"
+             if t.get("avg_benchmark") is not None else "")
+    summary = (f'<p style="margin:0 0 8px"><b>{t["count"]}</b> recommendations since {e(t["since"])}: '
+               f'<b>{t["winners"]}</b> up ({t["win_rate"]:.0%}), average {pct(t["avg_return"])}{bench}. '
+               f'Targets reached: <b>{t["targets_hit"]}</b>.</p>')
+    head = "".join(f'<th align="left" style="padding:4px 6px;background:{NAVY};color:#fff">{h}</th>'
+                   for h in ("Stock", "Horizon", "Since", "Then", "Now", "Return", "Status"))
+    rows = []
+    for r in t["positions"][:15]:
+        color = GREEN if r["status"] == "Target reached" else RED if r["status"] == "Under review" else "#1d2733"
+        rows.append(f'<tr><td style="padding:4px 6px">{e(r["name"])}</td><td style="padding:4px 6px">{e(r["horizon_label"])}</td>'
+                    f'<td style="padding:4px 6px">{e(r["date"])}</td><td style="padding:4px 6px">{num(r["entry"])}</td>'
+                    f'<td style="padding:4px 6px">{num(r["price"])}</td><td style="padding:4px 6px">{pct(r["return"])}</td>'
+                    f'<td style="padding:4px 6px;color:{color}">{e(r["status"])}</td></tr>')
+    table = (f'<table role="presentation" width="100%" cellspacing="0" style="border-collapse:collapse;font-size:12px">'
+             f'<tr>{head}</tr>{"".join(rows)}</table>'
+             f'<p style="font-size:11px;color:{MUTED}">Price returns since the first day each stock was recommended '
+             f'(dividends not included). Past performance does not guarantee future results.</p>')
+    return _section("Our track record", (_paras(review) if review else "") + summary + table)
+
+
 def render(date_str: str, out: dict, transcript: list[dict], df: pd.DataFrame, market: dict,
-           failed: list[str], ai_used: bool) -> str:
+           failed: list[str], ai_used: bool, track: dict | None = None, client_name: str = "") -> str:
     advice = out.get("client_advice")
     sections = [
         (f'<div style="background:#fbf6e9;border:1px solid {GOLD};border-radius:10px;padding:14px 18px;margin:18px 0 0">'
-         f'<div style="font-size:16px;font-weight:bold;color:{NAVY};margin-bottom:6px">Our advice to you</div>'
+         f'<div style="font-size:16px;font-weight:bold;color:{NAVY};margin-bottom:6px">Our advice to you{", " + e(client_name) if client_name else ""}</div>'
          f'<div style="font-size:14.5px;line-height:1.6">{_paras(advice)}</div>'
          f'<div style="font-size:12px;color:{MUTED}">From Saeed and the Hammor Co. team</div></div>') if advice else "",
         _section("Market overview", _paras(out["market_overview"]) + _market_block(market)),
         _section("Long-term opportunities (1+ years)", _pick_cards(out["picks"]["long_term"], df)),
         _section("Medium-term growth (3–12 months)", _pick_cards(out["picks"]["medium_term"], df)),
         _section("Income and dividends", _pick_cards(out["picks"]["income"], df)),
+        _track_block(track, out.get("track_review", "")),
     ]
     if out.get("watchlist"):
         items = "".join(f"<li><b>{e(w['symbol'])}</b> – {e(w['reason'])}</li>" for w in out["watchlist"])

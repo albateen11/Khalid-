@@ -22,11 +22,13 @@ import os
 
 import pandas as pd
 
+from . import track as track_mod
 from .team import ABDULLAH, LAYLA, MARIAM, OMAR, SAEED, YOUSEF, Member
 
 log = logging.getLogger(__name__)
 
 MODEL = os.environ.get("HAMMOR_MODEL", "claude-opus-5-5")
+CLIENT_NAME = os.environ.get("CLIENT_NAME", "").strip()
 BETAS = ["server-side-fallback-2026-07-01"]
 
 
@@ -42,7 +44,17 @@ three horizons: long-term (1+ years, quality and value), medium-term growth
 Prices are in AED. Sharia screening follows AAOIFI Shari'ah Standard No. 21.
 Only stocks whose sharia_status is "Compliant" may be recommended. The quantitative
 data comes from free, delayed sources and may have gaps: be honest about uncertainty
-and never invent figures."""
+and never invent figures.
+{client}
+The team has a memory: the TRACK RECORD shows how its earlier recommendations have done
+since they were made. Learn from it: own your mistakes and don't repeat them."""
+
+
+def _firm_context() -> str:
+    client = (f"The client is {CLIENT_NAME}. Hammor Co. is their own private research company and "
+              f"the team works for them. Address them by name, as \"{CLIENT_NAME}\".") if CLIENT_NAME else \
+             "Hammor Co. is the client's own private research company, and the team works for them."
+    return FIRM_CONTEXT.format(client=client)
 
 MEETING_STYLE = """You are speaking at the team's morning meeting. Talk naturally in the
 first person, as in a real meeting: address colleagues by name, agree or disagree with
@@ -58,7 +70,17 @@ SHARIA SCREENING SUMMARY:
 {sharia}
 
 CANDIDATES (Sharia-compliant, highest quant scores; ratios are fractions, so 0.12 = 12%):
-{screen}"""
+{screen}
+
+TRACK RECORD (the team's earlier recommendations measured to today's price; returns are
+fractions, price only, excluding dividends; benchmark = average compliant stock over the same days):
+{track}"""
+
+REVIEW = """Open the meeting, Saeed. In at most 160 words, review the TRACK RECORD with
+the team before any new ideas: how many recommendations are up or down, how they compare
+with the market benchmark, the best and the worst, any stock "Under review" (down 8% or
+more), and one lesson the team should apply today. If there is no track record yet, welcome
+everyone to the team's first meeting and set today's agenda instead."""
 
 PITCH = """It's {date}, and you open the meeting for {exchange}. First use web search to
 check the latest news (the last 1–2 weeks) on your best {exchange} candidates and on the
@@ -68,8 +90,8 @@ horizon each one suits and why, citing the news and the numbers), and one stock 
 list you would NOT buy now."""
 
 CHALLENGE = {
-    "risk": """Respond to the pitches so far in at most 200 words. Challenge the
-riskiest ideas: valuation, stretched RSI, volatility, liquidity, concentration, macro.
+    "risk": """Respond to the pitches so far in at most 200 words. Use the TRACK RECORD:
+point out earlier picks that are losing and what went wrong. Challenge the riskiest ideas: valuation, stretched RSI, volatility, liquidity, concentration, macro.
 You may web search for current macro risks. Say which ideas you are comfortable with and
 what would make the others acceptable.""",
     "income": """Respond in at most 180 words. Review the income angle: which pitched
@@ -102,11 +124,15 @@ sharia_officer_note: Abdullah's compliance conclusions in 3–5 sentences, inclu
 risks: 3–5 key risks, building on Yousef's points.
 closing_remarks: what you say to close the meeting, in at most 120 words, in your own voice,
 explaining the main decisions and whose argument won where the team disagreed.
+track_review: 2–4 sentences on the team's track record and what it has learned (empty string
+if there is no track record yet).
 client_advice: the team's advice to the client, written directly to them ("you") in plain,
 warm language with no jargon, 5–8 sentences. Say clearly what to do today (buy, add, wait or
 hold cash) and name the stocks, suggest a simple split of new money across the long-term,
 growth and income lists (for example 50/25/25) and how much to keep in cash, say what to avoid,
-and give one reminder about Sharia purification. Base it on what the team agreed in the meeting.
+and give one reminder about Sharia purification. Also follow up on EARLIER recommendations from
+the track record: which to keep holding, which reached their target (consider taking profit),
+and which to exit or review. Base it on what the team agreed in the meeting.
 headline: one line summarising today's view. market_overview: 3–5 sentences.
 Use ONLY symbols from the data, and pick only stocks whose sharia_status is "Compliant".
 
@@ -158,9 +184,11 @@ COMMITTEE_SCHEMA = {
         "risks": {"type": "array", "items": {"type": "string"}},
         "closing_remarks": {"type": "string"},
         "client_advice": {"type": "string"},
+        "track_review": {"type": "string"},
     },
     "required": ["headline", "market_overview", "picks", "watchlist", "avoid",
-                 "sharia_officer_note", "risks", "closing_remarks", "client_advice"],
+                 "sharia_officer_note", "risks", "closing_remarks", "client_advice",
+                 "track_review"],
     "additionalProperties": False,
 }
 
@@ -253,7 +281,7 @@ def _stream_handler(emit, who: str, stream_text: bool = True):
 
 
 def _system(member: Member) -> str:
-    return (f"{FIRM_CONTEXT}\n\nYou are {member.name}, {member.role} at Hammor Co. "
+    return (f"{_firm_context()}\n\nYou are {member.name}, {member.role} at Hammor Co. "
             f"{member.persona}\n\n{MEETING_STYLE}")
 
 
@@ -261,7 +289,7 @@ def _transcript_text(transcript: list[dict]) -> str:
     return "\n\n".join(f"{t['name']} ({t['role']}): {t['text']}" for t in transcript)
 
 
-ROUNDS = {"pitches": "Round 1 · Pitches", "challenge": "Round 2 · Challenge",
+ROUNDS = {"review": "Opening · Track record", "pitches": "Round 1 · Pitches", "challenge": "Round 2 · Challenge",
           "response": "Round 3 · Response", "decision": "Decision"}
 
 
@@ -269,8 +297,9 @@ class Meeting:
     """Runs the morning meeting turn by turn and keeps the transcript."""
 
     def __init__(self, df: pd.DataFrame, market: dict, sharia_summary: dict, date: str,
-                 on_event=None):
+                 on_event=None, track: dict | None = None):
         self.df, self.market, self.sharia, self.date = df, market, sharia_summary, date
+        self.track = track or {}
         self.transcript: list[dict] = []
         self.emit = on_event or (lambda e: None)
 
@@ -282,6 +311,7 @@ class Meeting:
                               default=str),
             sharia=json.dumps(self.sharia, default=str),
             screen=_records(compliant if full else _candidates(self.df, exchange)),
+            track=track_mod.for_prompt(self.track),
         )
 
     def _round(self, key: str) -> None:
@@ -310,6 +340,8 @@ class Meeting:
         return text
 
     def run(self) -> dict:
+        self._round("review")
+        self.speak(SAEED, REVIEW, "review")
         self._round("pitches")
         self.speak(OMAR, PITCH.format(date=self.date, exchange="ADX"), "pitches",
                    exchange="ADX", tools=[web_search(5)])
@@ -328,7 +360,7 @@ class Meeting:
                    "role": SAEED.role, "round": "decision"})
         user = (f"{self._data(full=True)}\n\n"
                 f"{DECISION.format(transcript=_transcript_text(self.transcript))}")
-        system = f"{FIRM_CONTEXT}\n\nYou are {SAEED.name}, {SAEED.role} at Hammor Co. {SAEED.persona}"
+        system = f"{_firm_context()}\n\nYou are {SAEED.name}, {SAEED.role} at Hammor Co. {SAEED.persona}"
         resp = _call(system, user, output_config={
             "effort": "high", "format": {"type": "json_schema", "schema": COMMITTEE_SCHEMA}},
             on_stream=_stream_handler(self.emit, SAEED.key, stream_text=False))
@@ -381,6 +413,7 @@ def rules_committee(df: pd.DataFrame) -> dict:
                                "conservatively (all treated as interest-bearing).",
         "risks": ["Picks are model-generated without analyst review."],
         "closing_remarks": "",
+        "track_review": "",
         "client_advice": "The team didn't meet today, so there is no personal advice. The picks below come "
                          "from the numbers only. Treat them as a starting list to research, not as "
                          "recommendations to act on.",
@@ -388,12 +421,12 @@ def rules_committee(df: pd.DataFrame) -> dict:
 
 
 def run_team(df: pd.DataFrame, market: dict, sharia_summary: dict, date: str,
-             on_event=None) -> tuple[dict, list, bool]:
+             on_event=None, track: dict | None = None) -> tuple[dict, list, bool]:
     """Returns (decision, meeting_transcript, ai_used)."""
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.warning("ANTHROPIC_API_KEY not set — using the rules-based committee")
         return rules_committee(df), [], False
-    meeting = Meeting(df, market, sharia_summary, date, on_event)
+    meeting = Meeting(df, market, sharia_summary, date, on_event, track)
     try:
         out = meeting.run()
     except Exception:

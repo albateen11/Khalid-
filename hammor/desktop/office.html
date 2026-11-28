@@ -138,6 +138,16 @@ main{display:grid;grid-template-columns:minmax(460px,1.05fr) minmax(380px,1fr);g
 .advice h3{margin:0 0 6px;color:var(--gold2);font-size:16px}
 .advice p{margin:0 0 8px;font-size:15px;line-height:1.65;color:#f3ead2;white-space:pre-wrap}
 .advice .from{font-size:12px;color:var(--muted)}
+.track{margin-top:18px}
+.track h3{font-size:13px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);margin:0 0 10px}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.tile{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.tile span{display:block;color:var(--muted);font-size:11.5px}.tile b{font-size:20px}
+.ttable{width:100%;border-collapse:collapse;font-size:12.5px}
+.ttable th{text-align:left;color:var(--muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line)}
+.ttable td{padding:6px 8px;border-bottom:1px solid var(--line)}
+.ttable .st-good{color:var(--green)} .ttable .st-bad{color:var(--red)}
+.tscroll{overflow-x:auto}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px}
 .box{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
 .box h4{margin:0 0 6px;font-size:13px;color:var(--gold)}
@@ -161,6 +171,7 @@ main{display:grid;grid-template-columns:minmax(460px,1.05fr) minmax(380px,1fr);g
 
 body.static #settingsBtn{display:none}
 @media (max-width:700px){
+  .tiles{grid-template-columns:1fr 1fr}
   header{position:static;flex-wrap:wrap;gap:8px 10px;padding:10px 14px;padding-top:max(10px, env(safe-area-inset-top))}
   select.btn{padding-right:30px}
   .logo{font-size:17px} .sub{display:none} #source{order:2}
@@ -252,8 +263,8 @@ const TEAM = [
   {key:"sharia", name:"Abdullah", role:"Sharia Compliance Officer", x:86, y:70},
 ];
 const BY = Object.fromEntries(TEAM.map(m => [m.key, m]));
-const STAGES = [["data","Market data"],["pitches","Pitches"],["challenge","Challenge"],["response","Response"],["decision","Decision"]];
-const ROUND_LABEL = {pitches:"Round 1 · Pitches", challenge:"Round 2 · Challenge", response:"Round 3 · Response", decision:"Decision"};
+const STAGES = [["data","Market data"],["review","Track record"],["pitches","Pitches"],["challenge","Challenge"],["response","Response"],["decision","Decision"]];
+const ROUND_LABEL = {review:"Opening · Track record", pitches:"Round 1 · Pitches", challenge:"Round 2 · Challenge", response:"Round 3 · Response", decision:"Decision"};
 const LEGACY_ROUNDS = ["pitches","pitches","challenge","challenge","challenge","response","response","decision"];
 const RESEARCHERS = new Set(["adx","dfm","risk","income"]);
 const $ = s => document.querySelector(s);
@@ -350,7 +361,7 @@ function renderResults(rec){
   box.append(el("div","sub", (rec.date_label||rec.date||"") + (rec.ai_used ? " · Decision by Saeed after the team meeting" : " · Quantitative screen only")));
   box.append(el("h2","", d.headline));
   if (d.client_advice){
-    const a = el("div","advice"); a.append(el("h3","","Our advice to you"), el("p","", d.client_advice), el("div","from","From Saeed and the Hammor Co. team"));
+    const a = el("div","advice"); a.append(el("h3","","Our advice to you" + (rec.client_name ? ", " + rec.client_name : "")), el("p","", d.client_advice), el("div","from","From Saeed and the Hammor Co. team"));
     box.append(a);
   }
   box.append(el("p","overview", d.market_overview));
@@ -375,6 +386,7 @@ function renderResults(rec){
     cols.append(col);
   }
   box.append(cols);
+  box.append(renderTrack(rec.track, d.track_review));
   const g = el("div","grid2");
   const list = (title, items, fmt) => { const b = el("div","box"); b.append(el("h4","",title)); const ul = el("ul"); for (const i of items) ul.append(el("li","",fmt(i))); if (!items.length) ul.append(el("li","","None today")); b.append(ul); return b; };
   g.append(list("Watchlist", d.watchlist||[], w => `${w.symbol} – ${w.reason}`), list("Avoid for now", d.avoid||[], w => `${w.symbol} – ${w.reason}`));
@@ -383,6 +395,32 @@ function renderResults(rec){
   box.append(g);
   box.append(el("p","disclaimer","For your personal information only, not advice from an SCA-licensed adviser. Data comes from free, delayed sources. Check prices and Sharia status with a qualified scholar or the company's Sharia board before investing."));
   box.classList.add("show");
+}
+
+function renderTrack(t, review){
+  const w = el("div","track"); w.append(el("h3","","Our track record"));
+  if (!t || !t.count){ w.append(el("p","sub","The team remembers every recommendation. From the next meeting on, their record appears here.")); return w; }
+  if (review) w.append(el("p","overview", review));
+  const tiles = el("div","tiles");
+  const tile = (label, value, cls) => { const x = el("div","tile"); const b = el("b", cls||"", value); x.append(el("span","",label), b); tiles.append(x); };
+  tile("Recommendations", String(t.count));
+  tile("Up", `${t.winners} (${Math.round(t.win_rate*100)}%)`);
+  tile("Average return", pct(t.avg_return), t.avg_return > 0 ? "up" : t.avg_return < 0 ? "down" : "");
+  tile("Market (compliant avg)", t.avg_benchmark == null ? "–" : pct(t.avg_benchmark));
+  w.append(tiles);
+  const sc = el("div","tscroll"); const tb = el("table","ttable"); const hr = el("tr");
+  for (const h of ["Stock","Horizon","Since","Then","Now","Return","Status"]) hr.append(el("th","",h));
+  tb.append(hr);
+  for (const r of t.positions.slice(0, 20)){
+    const tr = el("tr");
+    const ret = el("td"); ret.append(pctSpan(r.return));
+    const st = el("td", r.status === "Target reached" ? "st-good" : r.status === "Under review" ? "st-bad" : "", r.status);
+    tr.append(el("td","",r.name), el("td","",r.horizon_label), el("td","",r.date), el("td","",money(r.entry)), el("td","",money(r.price)), ret, st);
+    tb.append(tr);
+  }
+  sc.append(tb); w.append(sc);
+  w.append(el("p","disclaimer","Price returns since the first day each stock was recommended; dividends not included."));
+  return w;
 }
 
 /* ---------------- replay engine ---------------- */
@@ -430,7 +468,7 @@ async function replay(rec){
       const t = turns[i]; const round = t.round || LEGACY_ROUNDS[i] || "decision";
       setStage(round, `${BY[t.key]?.name || t.name} has the floor`);
       setActive(t.key); $("#tableNote").textContent = `${t.name} · ${t.role}`;
-      if (t.key === "chief"){ setStatus(t.key, "writing"); await wait(2200); }
+      if (t.key === "chief" && round === "decision"){ setStatus(t.key, "writing"); await wait(2200); }
       else {
         setStatus(t.key, "thinking"); await wait(1100);
         if (RESEARCHERS.has(t.key) && (round === "pitches" || round === "challenge")){ setStatus(t.key, "searching"); await wait(1600); }

@@ -134,11 +134,13 @@ def test_meeting_runs_in_order_and_guards_sharia(monkeypatch):
 
     assert ai
     assert [t["name"] for t in transcript] == [
-        "Omar", "Layla", "Yousef", "Mariam", "Abdullah", "Omar", "Layla", "Saeed"]
+        "Saeed", "Omar", "Layla", "Yousef", "Mariam", "Abdullah", "Omar", "Layla", "Saeed"]
+    assert transcript[0]["round"] == "review"
     assert transcript[-1]["text"] == "Meeting closed."
     # Later speakers hear earlier ones.
     assert "Omar (ADX Equity Analyst)" in fake.calls[-2]["messages"][0]["content"]
-    assert "You are Yousef" in fake.calls[3]["system"]
+    assert "You are Yousef" in fake.calls[4]["system"]
+    assert "TRACK RECORD" in fake.calls[4]["messages"][0]["content"]
     # pause_turn was resumed, and the defaults are right.
     assert fake.calls[1]["messages"][-1]["role"] == "assistant"
     assert fake.calls[0]["model"] == "claude-opus-5-5" and fake.calls[0]["fallbacks"] == "default"
@@ -157,3 +159,35 @@ def test_desktop_selftest(monkeypatch, tmp_path):
     server.save_settings({"github_token": "ghp-secret"})
     assert server.public_settings()["has_github_token"]
     assert "ghp-secret" not in json.dumps(server.public_settings())
+
+
+def test_track_record(tmp_path):
+    from datetime import date
+    from hammor import analysis, track
+    df, _ = _table()
+    price = dict(zip(df["symbol"], df["price"]))
+    sym_up, sym_down = "DEWA.AE", "TAQA.AD"
+    old_screen = [
+        {"symbol": sym_up, "price": price[sym_up] / 1.10, "sharia_status": "Compliant"},
+        {"symbol": sym_down, "price": price[sym_down] / 0.85, "sharia_status": "Compliant"},
+    ]
+    def meeting(day, picks):
+        return {"date": day, "screen": old_screen,
+                "decision": {"picks": {"long_term": picks, "medium_term": [], "income": []}}}
+    up = {"symbol": sym_up, "name": "DEWA", "action": "Buy", "target_price": price[sym_up] * 2}
+    down = {"symbol": sym_down, "name": "TAQA", "action": "Buy", "target_price": price[sym_down] * 2}
+    (tmp_path / "2026-11-20.json").write_text(json.dumps(meeting("2026-11-20", [up, down])))
+    (tmp_path / "2026-11-24.json").write_text(json.dumps(meeting("2026-11-24", [up])))
+    (tmp_path / "2026-11-27.json").write_text(json.dumps(meeting("2026-11-27", [up])))  # today: ignored
+    hist = track.load_meetings(tmp_path, today=date(2026, 11, 27))
+    assert [m["date"] for m in hist] == ["2026-11-20", "2026-11-24"]
+    t = track.build_track_record(hist, df, today=date(2026, 11, 27))
+    assert t["count"] == 2 and t["winners"] == 1  # DEWA counted once, from its first day
+    rows = {r["symbol"]: r for r in t["positions"]}
+    assert abs(rows[sym_up]["return"] - 0.10) < 1e-9 and rows[sym_up]["date"] == "2026-11-20"
+    assert rows[sym_up]["status"] == "Still recommended"
+    assert rows[sym_down]["status"] == "Under review"
+    assert "summary" in track.for_prompt(t)
+    from hammor import report
+    html = report.render("today", advisors.rules_committee(df), [], df, {}, [], False, t, "Sam")
+    assert "Our track record" in html and "Our advice to you, Sam" in html
